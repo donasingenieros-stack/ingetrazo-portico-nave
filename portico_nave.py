@@ -17,6 +17,11 @@ parámetros, una nave de pórticos metálicos a dos aguas:
 * puente grúa opcional: ménsulas en los pilares y viga carril;
 * cruces de San Andrés (redondo macizo) en cubierta y en fachadas
   laterales, en los vanos extremos o en todos.
+* fachadas de paneles de hormigón en las cuatro fachadas, con altura de
+  fachada y de placa propias en cada una: en los piñones (pórticos primero y
+  último), perfil U (UPE o UPN) en las esquinas y perfiles H intermedios por
+  delante del pórtico; en los laterales, paneles de pilar a pilar alojados en
+  la H del pilar. El panel va siempre entre las alas, pegado al ala exterior.
 
 Interfaz en español e inglés (selector en el cuadro de parámetros).
 
@@ -67,7 +72,7 @@ from core.history import SnapshotImport
 
 log = logging.getLogger("ingetrazo.plugins.portico_nave")
 
-__version__ = "1.1"
+__version__ = "1.2"
 
 KEY = Path(__file__).stem            # = ExtensionApp.key
 STEEL = 7850.0                       # kg/m³
@@ -139,6 +144,70 @@ _S = {
                  "must be at least {dmin:.0f} mm."),
     "c_info_brace": ("Con un solo pórtico no se generan cruces de San Andrés.",
                      "No cross bracing is generated with a single frame."),
+    # Fachadas
+    "e_fach_h": ("La altura de fachada y de panel deben ser positivas ({f}).",
+                 "Wall and panel heights must be positive ({f})."),
+    "e_fach_holg": ("La holgura de la fachada al pilar no puede ser negativa.",
+                    "The wall clearance to the columns cannot be negative."),
+    "e_fach_sep": ("La separación máxima entre perfiles de fachada es demasiado pequeña.",
+                   "The maximum spacing between wall posts is too small."),
+    "e_panel_e": ("El espesor de panel debe ser positivo.", "Panel thickness must be positive."),
+    "e_panel_fit": ("El panel de {e:.0f} mm no cabe entre las alas del {prof} "
+                    "(hueco libre {free:.0f} mm).",
+                    "The {e:.0f} mm panel does not fit between the flanges of the {prof} "
+                    "(clear gap {free:.0f} mm)."),
+    "c_fach_pinon": ("La {f} supera la altura de alero; el hastial por encima del alero no "
+                     "se modela.",
+                     "The {f} exceeds the eaves height; the gable above the eaves is not "
+                     "modelled."),
+    "c_fach_lat": ("Los paneles de la {f} ({h:.2f} m) superan la cabeza de los pilares "
+                   "({head:.3f} m).",
+                   "The {f} panels ({h:.2f} m) exceed the column head ({head:.3f} m)."),
+    "c_fach_brace": ("Las cruces de la {f} no caben entre el panel y el ala interior del pilar.",
+                     "The {f} bracing does not fit between the panel and the inner column "
+                     "flange."),
+    "fk_frontal": ("fachada piñón frontal", "front gable wall"),
+    "fk_posterior": ("fachada piñón posterior", "rear gable wall"),
+    "fk_izq": ("fachada lateral izquierda", "left side wall"),
+    "fk_der": ("fachada lateral derecha", "right side wall"),
+    "tab_fach": ("Fachadas", "Walls"),
+    "f_paneles": ("Paneles de hormigón", "Concrete panels"),
+    "f_panel_e": ("Espesor de panel", "Panel thickness"),
+    "g_fach": ("Fachada", "Wall"),
+    "g_on": ("Activa", "On"),
+    "g_h": ("Altura de fachada", "Wall height"),
+    "g_ph": ("Altura de placa", "Panel height"),
+    "f_esquina": ("Piñón: perfil de esquina (U)", "Gable: corner post (channel)"),
+    "f_intermedio": ("Piñón: perfil intermedio", "Gable: intermediate post"),
+    "f_fsep": ("Piñón: separación máxima entre perfiles", "Gable: maximum post spacing"),
+    "f_fholg": ("Piñón: holgura a los pilares del pórtico", "Gable: clearance to frame columns"),
+    "f_fach_note": ("Piñones (pórticos primero y último): perfil U en las esquinas, con el alma "
+                    "enrasada con la cara exterior del pilar, y perfiles intermedios por delante "
+                    "del pórtico; los perfiles tienen la altura de su fachada. Laterales: paneles "
+                    "de pilar a pilar, dentro de la H del pilar. El panel va entre las alas, "
+                    "pegado al ala exterior.",
+                    "Gables (first and last frames): channel posts at the corners, web flush "
+                    "with the outer face of the column, and intermediate posts in front of the "
+                    "frame; posts take the height of their wall. Side walls: panels from column "
+                    "to column, inside the column H. Panels sit between the flanges, against "
+                    "the outer flange."),
+    "sum_pan": (" · {u} paneles ({m2} m²)", " · {u} panels ({m2} m²)"),
+    "r_post_c": ("Perfiles de esquina — {f}", "Corner posts — {f}"),
+    "r_post_h": ("Perfiles intermedios — {f}", "Intermediate posts — {f}"),
+    "m_panels": ("Paneles de hormigón", "Concrete panels"),
+    "ph": (("Fachada", "Ud.", "Superficie (m²)", "Volumen (m³)"),
+           ("Wall", "No.", "Area (m²)", "Volume (m³)")),
+    "o_paneles": ("Paneles", "Panels"),
+    "n_fach_frontal": ("Fachada piñón frontal", "Front gable wall"),
+    "n_fach_posterior": ("Fachada piñón posterior", "Rear gable wall"),
+    "n_fach_izq": ("Fachada lateral izquierda", "Left side wall"),
+    "n_fach_der": ("Fachada lateral derecha", "Right side wall"),
+    "n_post_c": ("{prof} esquina {k}", "{prof} corner {k}"),
+    "n_panel": ("Panel {i}.{j}", "Panel {i}.{j}"),
+    "ly_fac": ("Fachada perfiles", "Wall posts"),
+    "ly_pan": ("Fachada paneles", "Wall panels"),
+    "mt_fac": ("Acero fachada", "Wall steel"),
+    "mt_pan": ("Panel de hormigón", "Concrete panel"),
     # Lados y tipos de pórtico
     "side_l": ("fachada izquierda", "left side"),
     "side_r": ("fachada derecha", "right side"),
@@ -357,14 +426,36 @@ _HEB = {100: (100, 100, 6.0, 10.0, 20.4), 120: (120, 120, 6.5, 11.0, 26.7),
         500: (500, 300, 14.5, 28.0, 187.0), 550: (550, 300, 15.0, 29.0, 199.0),
         600: (600, 300, 15.5, 30.0, 212.0)}
 
+# Perfiles U (h, b, tw, tf en mm; peso kg/m). UPN con ala inclinada: se modela
+# con alas paralelas del espesor nominal.
+_UPE = {80: (80, 50, 4.0, 7.0, 7.9), 100: (100, 55, 4.5, 7.5, 9.8),
+        120: (120, 60, 5.0, 8.0, 12.1), 140: (140, 65, 5.0, 9.0, 14.5),
+        160: (160, 70, 5.5, 9.5, 17.0), 180: (180, 75, 5.5, 10.5, 19.7),
+        200: (200, 80, 6.0, 11.0, 22.8), 220: (220, 85, 6.5, 12.0, 26.6),
+        240: (240, 90, 7.0, 12.5, 30.2), 270: (270, 95, 7.5, 13.5, 35.2),
+        300: (300, 100, 9.5, 15.0, 44.4)}
+_UPN = {80: (80, 45, 6.0, 8.0, 8.64), 100: (100, 50, 6.0, 8.5, 10.6),
+        120: (120, 55, 7.0, 9.0, 13.4), 140: (140, 60, 7.0, 10.0, 16.0),
+        160: (160, 65, 7.5, 10.5, 18.8), 180: (180, 70, 8.0, 11.0, 22.0),
+        200: (200, 75, 8.5, 11.5, 25.3), 220: (220, 80, 9.0, 12.5, 29.4),
+        240: (240, 85, 9.5, 13.0, 33.2), 260: (260, 90, 10.0, 14.0, 37.9),
+        280: (280, 95, 10.0, 15.0, 41.8), 300: (300, 100, 10.0, 16.0, 46.2)}
+
 PROFILES: dict[str, tuple] = {}
-for _serie, _tabla in (("IPE", _IPE), ("HEA", _HEA), ("HEB", _HEB)):
+for _serie, _tabla in (("IPE", _IPE), ("HEA", _HEA), ("HEB", _HEB), ("UPE", _UPE),
+                       ("UPN", _UPN)):
     for _n, (_h, _b, _tw, _tf, _kg) in _tabla.items():
         PROFILES[f"{_serie} {_n}"] = (_h / 1000, _b / 1000, _tw / 1000, _tf / 1000, _kg)
 PROFILE_NAMES = list(PROFILES)
 
 PURLIN_TYPES = ["C", "Z", "IPE"]
 BRACED_BAYS = ["extremos", "todos"]
+# Fachadas: piñones (pórticos primero y último) y laterales.
+FACADES = ["frontal", "posterior", "izq", "der"]
+PINONES = ["frontal", "posterior"]
+U_SERIES = ("UPE", "UPN")
+POST_SERIES = ("HEA", "HEB", "IPE")
+PANEL_GAP = 0.01      # holgura del panel al alma del perfil, m
 
 DEFAULTS = {
     # Geometría
@@ -389,16 +480,28 @@ DEFAULTS = {
     # Arriostramiento (cruces de San Andrés en redondo)
     "arr_cub": True, "arr_fach": True, "arr_vanos": "extremos",
     "arr_recuadros": 3, "arr_fach_n": 1, "arr_d": 0.020,
+    # Fachadas de paneles de hormigón. Piñones: perfil U en las esquinas y
+    # perfiles intermedios por delante del pórtico. Laterales: paneles de
+    # pilar a pilar, dentro de la H del pilar. Altura de fachada y de panel
+    # independientes en cada fachada.
+    "fach_frontal": True, "fach_posterior": True, "fach_izq": True, "fach_der": True,
+    "fach_h_frontal": 8.0, "fach_h_posterior": 8.0, "fach_h_izq": 8.0, "fach_h_der": 8.0,
+    "panel_h_frontal": 2.0, "panel_h_posterior": 2.0, "panel_h_izq": 2.0, "panel_h_der": 2.0,
+    "paneles": True, "panel_e": 0.16,
+    "fach_esquina": "UPE 200", "fach_intermedio": "HEA 200", "fach_sep": 6.0,
+    "fach_holgura": 0.0,
 }
 
 # Valores que se aplican a naves guardadas con versiones anteriores, para que
 # al editarlas o medirlas no aparezcan piezas que no tenían.
-LEGACY = {"arr_cub": False, "arr_fach": False}
+LEGACY = {"arr_cub": False, "arr_fach": False,
+          "fach_frontal": False, "fach_posterior": False, "fach_izq": False, "fach_der": False}
 
-LAYER_KEYS = ("est", "cor", "can", "pg", "arr")
+LAYER_KEYS = ("est", "cor", "can", "pg", "arr", "fac", "pan")
 MAT_RGB = {"est": (0.36, 0.42, 0.50), "cor": (0.72, 0.62, 0.30),
            "can": (0.80, 0.80, 0.82), "pg": (0.80, 0.45, 0.15),
-           "arr": (0.25, 0.55, 0.35)}
+           "arr": (0.25, 0.55, 0.35), "fac": (0.45, 0.50, 0.56),
+           "pan": (0.76, 0.76, 0.73)}
 
 
 def layer_name(k: str) -> str:
@@ -438,6 +541,11 @@ def normalize(params, legacy: bool = True) -> dict:
         p["correa_tipo"] = "C"
     if p["arr_vanos"] not in BRACED_BAYS:
         p["arr_vanos"] = DEFAULTS["arr_vanos"]
+    if p["fach_esquina"] not in PROFILES or p["fach_esquina"].split()[0] not in U_SERIES:
+        p["fach_esquina"] = DEFAULTS["fach_esquina"]
+    if (p["fach_intermedio"] not in PROFILES
+            or p["fach_intermedio"].split()[0] not in POST_SERIES):
+        p["fach_intermedio"] = DEFAULTS["fach_intermedio"]
     return p
 
 
@@ -589,7 +697,7 @@ class Geo:
         p = self.p
         out = self.purlin_check()
         if not p["grua"]:
-            return out
+            return out + self.facade_warnings()
         hm = PROFILES[p["mensula"]][0]
         hvc, bvc = PROFILES[p["viga_carril"]][:2]
         x = self.hp + p["mensula_vuelo"]
@@ -613,12 +721,152 @@ class Geo:
             out.append(tr("c_low"))
         if p["mensula_vuelo"] <= bvc / 2:
             out.append(tr("c_vuelo"))
+        out += self.facade_warnings()
         seen, uniq = set(), []
         for m in out:
             if m not in seen:
                 seen.add(m)
                 uniq.append(m)
         return uniq
+
+    # --- Fachadas ---------------------------------------------------------
+    # Paneles de hormigón siempre entre las alas de los perfiles, pegados al ala
+    # exterior. Piñones: perfil U en las esquinas (alma enrasada con la cara
+    # exterior del pilar) y perfiles H intermedios, por delante del pórtico
+    # extremo. Laterales: paneles de pilar a pilar, alojados en la H del pilar y
+    # terminando en su alma.
+
+    def facades_on(self) -> list[str]:
+        return [fk for fk in FACADES if self.p["fach_" + fk]]
+
+    def has_facade(self) -> bool:
+        return bool(self.facades_on())
+
+    def facade_check(self) -> None:
+        """Errores de las fachadas (lanza NaveError)."""
+        p = self.p
+        on = self.facades_on()
+        if not on:
+            return
+        for fk in on:
+            if p["fach_h_" + fk] <= 0 or (p["paneles"] and p["panel_h_" + fk] <= 0):
+                raise NaveError(tr("e_fach_h", f=tr("fk_" + fk)))
+        if p["fach_holgura"] < 0:
+            raise NaveError(tr("e_fach_holg"))
+        pin = [fk for fk in on if fk in PINONES]
+        if pin and p["fach_sep"] <= 0.5:
+            raise NaveError(tr("e_fach_sep"))
+        if not p["paneles"]:
+            return
+        e = p["panel_e"]
+        if e <= 0:
+            raise NaveError(tr("e_panel_e"))
+        hosts = []
+        if pin:
+            hosts += [p["fach_esquina"], p["fach_intermedio"]]
+        if any(fk not in PINONES for fk in on):
+            hosts.append(p["pilar"])
+        for name in hosts:
+            h, _b, _tw, tf, _kg = PROFILES[name]
+            if h - 2 * tf < e + 0.002:
+                raise NaveError(tr("e_panel_fit", e=e * 1000, prof=name,
+                                   free=(h - 2 * tf) * 1000))
+
+    def facade_warnings(self) -> list[str]:
+        p = self.p
+        out = []
+        for fk in self.facades_on():
+            H = p["fach_h_" + fk]
+            if fk in PINONES:
+                if H > min(self.Hl, self.Hr) + 1e-6:
+                    out.append(tr("c_fach_pinon", f=tr("fk_" + fk)))
+            else:
+                sd = "l" if fk == "izq" else "r"
+                head = min(self.side(sd, k).Hp for k in self.kinds_used())
+                if p["paneles"] and H > head + 1e-6:
+                    out.append(tr("c_fach_lat", f=tr("fk_" + fk), h=H, head=head))
+                if (p["paneles"] and p["arr_fach"] and self.braced_bays()
+                        and self.hp - 2 * self.tfp - p["panel_e"] < p["arr_d"] + 0.004):
+                    out.append(tr("c_fach_brace", f=tr("fk_" + fk)))
+        return out
+
+    def lateral_panels(self, sd: str) -> bool:
+        return self.p["paneles"] and self.p["fach_" + ("izq" if sd == "l" else "der")]
+
+    def pinon_depth(self) -> float:
+        return max(PROFILES[self.p["fach_esquina"]][0], PROFILES[self.p["fach_intermedio"]][0])
+
+    def pinon_lines(self) -> list[tuple]:
+        """Piñones activos: (clave, origen, dirección). El origen está en el
+        plano exterior de la fachada y en su extremo inicial; la normal izquierda
+        de la dirección apunta al exterior. Longitud = luz."""
+        off = self.bp / 2 + self.p["fach_holgura"] + self.pinon_depth()
+        lines = {"frontal": ((self.L, -off), (-1.0, 0.0)),
+                 "posterior": ((0.0, self.Ln + off), (1.0, 0.0))}
+        return [(fk, *lines[fk]) for fk in PINONES if self.p["fach_" + fk]]
+
+    def pinon_layout(self) -> tuple:
+        """Posiciones de los perfiles del piñón (extremos con perfil U) y
+        tramos de panel entre almas."""
+        p = self.p
+        length = self.L
+        nv = max(1, math.ceil(length / p["fach_sep"] - 1e-9))
+        posts = [length * k / nv for k in range(nv + 1)]
+        twu = PROFILES[p["fach_esquina"]][2]
+        twh = PROFILES[p["fach_intermedio"]][2]
+        spans = []
+        for i in range(nv):
+            a = posts[i] + (twu if i == 0 else twh / 2) + PANEL_GAP
+            b = posts[i + 1] - (twu if i == nv - 1 else twh / 2) - PANEL_GAP
+            spans.append((a, b))
+        return posts, spans
+
+    def lateral_spans(self) -> list[tuple]:
+        """Tramos de panel lateral en Y, de alma a alma de pilar."""
+        if self.n < 2:
+            return []
+        return [(i * self.s + self.twp / 2 + PANEL_GAP,
+                 (i + 1) * self.s - self.twp / 2 - PANEL_GAP) for i in range(self.n - 1)]
+
+    def courses(self, fk: str) -> list[tuple]:
+        """Hiladas de paneles (cota inferior, altura) de la fachada fk."""
+        out = []
+        H, hp = self.p["fach_h_" + fk], self.p["panel_h_" + fk]
+        z = 0.0
+        while z < H - 1e-6:
+            hh = min(hp, H - z)
+            out.append((z, hh))
+            z += hh
+        return out
+
+    def panel_tf(self) -> float:
+        """Ala exterior más gruesa de los perfiles del piñón: el panel la toca."""
+        return max(PROFILES[self.p["fach_esquina"]][3], PROFILES[self.p["fach_intermedio"]][3])
+
+    def wall_brace_x(self, sd: str) -> float:
+        """Plano de las cruces de fachada (abscisa del faldón): eje del pilar, o
+        centro del hueco entre panel y ala interior si hay paneles."""
+        if self.lateral_panels(sd):
+            return (self.tfp + self.p["panel_e"] + self.hp - self.tfp) / 2
+        return self.hp / 2
+
+    def panel_summary(self) -> dict:
+        """Paneles por fachada: {clave: (unidades, m², m³)}."""
+        p = self.p
+        out = {}
+        if not p["paneles"]:
+            return out
+        for fk in self.facades_on():
+            nc = len(self.courses(fk))
+            if fk in PINONES:
+                spans = self.pinon_layout()[1]
+            else:
+                spans = self.lateral_spans()
+            if not spans:
+                continue
+            area = sum(b - a for a, b in spans) * p["fach_h_" + fk]
+            out[fk] = (len(spans) * nc, area, area * p["panel_e"])
+        return out
 
     def notes(self) -> list[str]:
         """Avisos informativos (no bloquean)."""
@@ -685,6 +933,13 @@ def z_section(h, b, e, c):
                 (-(b - 3 * q), h - e), (-q, h - e)]
     return [(-q, 0), (b - q, 0), (b - q, e), (q, e), (q, h), (-(b - q), h),
             (-(b - q), h - e), (-q, h - e)]
+
+
+def u_profile(h, b, tw, tf):
+    """Perfil U: alma en u ∈ [0, tw], alas hacia +u; w centrado."""
+    hh = h / 2
+    return [(0, -hh), (b, -hh), (b, -hh + tf), (tw, -hh + tf), (tw, hh - tf),
+            (b, hh - tf), (b, hh), (0, hh)]
 
 
 def u_section(a, h, e):
@@ -1066,7 +1321,7 @@ class _Builder:
                                        layer=ly, ifc="IfcMember"))
             if p["arr_fach"]:
                 m = _mesh()
-                x = gx(sd, g.hp / 2)
+                x = gx(sd, g.wall_brace_x(sd))
                 top = g.wall_brace_top(sd)
                 k = p["arr_fach_n"]
                 zs = [i * top / k for i in range(k + 1)]
@@ -1077,15 +1332,106 @@ class _Builder:
                                        layer=ly, ifc="IfcMember"))
         return [_container(tr("n_arr"), inst, ly)]
 
+    # --- Fachadas ----------------------------------------------------------
+
+    def facades(self) -> list:
+        p, g = self.p, self.g
+        if not g.has_facade():
+            return []
+        g.facade_check()
+        fac = _paint(self.scene, "fac")
+        pan = _paint(self.scene, "pan") if p["paneles"] else None
+        ly_f, ly_p = layer_name("fac"), layer_name("pan")
+        e = p["panel_e"]
+
+        def box(s0, s1, t0, t1, height):
+            """Prisma rectangular (s, t, z) compartido entre paneles iguales."""
+            def make():
+                m = _mesh()
+                prism(m, [(s0, t0, 0), (s1, t0, 0), (s1, t1, 0), (s0, t1, 0)],
+                      (0, 0, height), pan)
+                return m
+            key = ("box",) + tuple(round(v, 5) for v in (s0, s1, t0, t1, height))
+            return self.cached(key, make)
+
+        def post(kind, H):
+            """Perfil vertical de piñón: exterior en t = 0, canto hacia t < 0."""
+            def make():
+                m = _mesh()
+                if kind == "h":
+                    h, b, tw, tf, _k = PROFILES[p["fach_intermedio"]]
+                    sec = i_section(h, b, tw, tf)
+                else:
+                    h, b, tw, tf, _k = PROFILES[p["fach_esquina"]]
+                    sec = [(u if kind == "u0" else -u, w) for u, w in u_profile(h, b, tw, tf)]
+                prism(m, [(u, w - h / 2, 0.0) for u, w in sec], (0, 0, H), fac)
+                return m
+            return self.cached(("post", kind, round(H, 6)), make)
+
+        groups = []
+        if any(fk in PINONES for fk in g.facades_on()):
+            tf = g.panel_tf()
+            posts, spans = g.pinon_layout()
+            for fk, origin, d in g.pinon_lines():
+                H = p["fach_h_" + fk]
+                F = _frame_matrix(origin, d)
+
+                def at(s_, z=0.0, F=F):
+                    M = QMatrix4x4(F)
+                    M.translate(QVector3D(s_, 0, z))
+                    return M
+                kids = [_group(post("u0", H), tr("n_post_c", prof=p["fach_esquina"], k=1),
+                               at(0.0), layer=ly_f, ifc="IfcColumn"),
+                        _group(post("u1", H), tr("n_post_c", prof=p["fach_esquina"], k=2),
+                               at(g.L), layer=ly_f, ifc="IfcColumn")]
+                for k, s_ in enumerate(posts[1:-1], 1):
+                    kids.append(_group(post("h", H), f"{p['fach_intermedio']} {k}", at(s_),
+                                       layer=ly_f, ifc="IfcColumn"))
+                if p["paneles"]:
+                    for i, (a, b) in enumerate(spans, 1):
+                        for j, (z0, hz) in enumerate(g.courses(fk), 1):
+                            kids.append(_group(box(0, b - a, -tf - e, -tf, hz),
+                                               tr("n_panel", i=i, j=j), at(a, z0),
+                                               layer=ly_p, ifc="IfcWall"))
+                groups.append(_container(tr("n_fach_" + fk), kids, ly_f))
+        spans = g.lateral_spans()
+        if spans and p["paneles"]:
+            x0, x1 = g.tfp, g.tfp + e
+            for fk, sd in (("izq", "l"), ("der", "r")):
+                if not p["fach_" + fk]:
+                    continue
+                kids = []
+                for i, (y0, y1) in enumerate(spans, 1):
+                    for j, (z0, hz) in enumerate(g.courses(fk), 1):
+                        M = _T(0, y0, z0)
+                        kids.append(_group(box(x0, x1, 0, y1 - y0, hz), tr("n_panel", i=i, j=j),
+                                           M if sd == "l" else self.R * M,
+                                           layer=ly_p, ifc="IfcWall"))
+                groups.append(_container(tr("n_fach_" + fk), kids, ly_p))
+        return groups
+
+
+def _frame_matrix(origin, d) -> QMatrix4x4:
+    """Sistema local de una fachada: s según d, t = normal izquierda
+    (exterior), z vertical."""
+    dx, dy = d
+    return QMatrix4x4(dx, -dy, 0.0, origin[0],
+                      dy, dx, 0.0, origin[1],
+                      0.0, 0.0, 1.0, 0.0,
+                      0.0, 0.0, 0.0, 1.0)
+
 
 def build_nave(scene, params) -> list:
     """Hijos del contenedor de la nave, en coordenadas locales de la nave."""
     p = normalize(params)
     b = _Builder(scene, p)
-    out = b.frames() + b.purlins() + b.gutters() + b.runway() + b.bracing()
+    out = (b.frames() + b.purlins() + b.gutters() + b.runway() + b.bracing()
+           + b.facades())
     keys = ["est", "cor"] + (["can"] if p["canalon"] else []) + (["pg"] if p["grua"] else [])
     if b.g.braced_bays():
         keys.append("arr")
+    if b.g.has_facade():
+        keys += ["fac"] + (["pan"] if p["paneles"] else [])
     _ensure_layers(scene, keys)
     return out
 
@@ -1178,7 +1524,28 @@ def measurement(params) -> list[tuple]:
                 k = p["arr_fach_n"]
                 add(label("r_afach", sd), prof, 2 * k * len(bays),
                     math.hypot(g.s, g.wall_brace_top(sd) / k), kgm)
+    if g.has_facade():
+        g.facade_check()
+        posts = g.pinon_layout()[0]
+        for fk in PINONES:
+            if not p["fach_" + fk]:
+                continue
+            H = p["fach_h_" + fk]
+            add(tr("r_post_c", f=tr("fk_" + fk)), p["fach_esquina"], 2, H,
+                PROFILES[p["fach_esquina"]][4])
+            add(tr("r_post_h", f=tr("fk_" + fk)), p["fach_intermedio"], len(posts) - 2, H,
+                PROFILES[p["fach_intermedio"]][4])
     return [(e, prof, u, l, kgm, u * l * kgm) for e, prof, u, l, kgm in rows]
+
+
+def panel_rows(params) -> list[tuple]:
+    """Paneles de hormigón por fachada: (fachada, unidades, m², m³)."""
+    p = normalize(params)
+    g = Geo(p)
+    if not g.has_facade():
+        return []
+    g.facade_check()
+    return [(tr("fk_" + fk), u, a, v) for fk, (u, a, v) in g.panel_summary().items()]
 
 
 def summary(params) -> str:
@@ -1187,7 +1554,11 @@ def summary(params) -> str:
     kg = sum(r[5] for r in measurement(p))
     kl, kr = len(g.purlin_positions("l")), len(g.purlin_positions("r"))
     cor = tr("sum_cor", k=kl) if kl == kr else tr("sum_cor2", kl=kl, kr=kr)
-    return tr("sum", L=g.L, Ln=g.Ln, n=g.n, cor=cor, kg=_num(kg))
+    txt = tr("sum", L=g.L, Ln=g.Ln, n=g.n, cor=cor, kg=_num(kg))
+    pr = panel_rows(p)
+    if pr:
+        txt += tr("sum_pan", u=sum(r[1] for r in pr), m2=_num(sum(r[2] for r in pr), 1))
+    return txt
 
 
 # ---------------------------------------------------------------------------
@@ -1353,8 +1724,9 @@ class NaveDialog:
     @classmethod
     def _ask_once(cls, viewport, p0, title_fn):
         from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                                       QDoubleSpinBox, QFormLayout, QLabel, QMessageBox,
-                                       QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+                                       QDoubleSpinBox, QFormLayout, QGridLayout, QLabel,
+                                       QMessageBox, QSpinBox, QTabWidget, QVBoxLayout,
+                                       QWidget)
         dlg = QDialog(viewport.window())
         dlg.setWindowTitle(f"{title()} — {title_fn()}")
         dlg.setMinimumWidth(640)
@@ -1511,6 +1883,60 @@ class NaveDialog:
         enable_with(acub, common, both)
         enable_with(afach, common, both)
 
+        f = page("tab_fach")
+        pnl = check(f, "paneles", "f_paneles")
+        pnl_w = [mm(f, "panel_e", "f_panel_e", 600.0, 0)]
+        grid_w = QWidget()
+        grid = QGridLayout(grid_w)
+        grid.setContentsMargins(0, 4, 0, 4)
+        for c, key in enumerate(("g_fach", "g_on", "g_h", "g_ph")):
+            hd = QLabel(f"<b>{tr(key)}</b>")
+            grid.addWidget(hd, 0, c)
+        fach_rows = {}
+        for r, fk in enumerate(FACADES, 1):
+            cb = QCheckBox()
+            cb.setChecked(p0["fach_" + fk])
+            w["fach_" + fk] = cb
+            hs = QDoubleSpinBox()
+            hs.setRange(0.0, 50.0)
+            hs.setDecimals(3)
+            hs.setSingleStep(0.1)
+            hs.setSuffix(" m")
+            hs.setValue(p0["fach_h_" + fk])
+            w["fach_h_" + fk] = hs
+            ps = QDoubleSpinBox()
+            ps.setRange(0.0, 10.0)
+            ps.setDecimals(2)
+            ps.setSingleStep(0.1)
+            ps.setSuffix(" m")
+            ps.setValue(p0["panel_h_" + fk])
+            w["panel_h_" + fk] = ps
+            grid.addWidget(QLabel(tr("fk_" + fk)), r, 0)
+            grid.addWidget(cb, r, 1)
+            grid.addWidget(hs, r, 2)
+            grid.addWidget(ps, r, 3)
+            fach_rows[fk] = (cb, hs, ps)
+        f.addRow(grid_w)
+        pin_w = [profile(f, "fach_esquina", "f_esquina", U_SERIES),
+                 profile(f, "fach_intermedio", "f_intermedio", POST_SERIES),
+                 length(f, "fach_sep", "f_fsep", 0.5, 30.0),
+                 length(f, "fach_holgura", "f_fholg", 0.0, 1.0, 3, 0.01)]
+        note(f, "f_fach_note")
+
+        def sync_fach(*_a):
+            for fk, (cb, hs, ps) in fach_rows.items():
+                hs.setEnabled(cb.isChecked())
+                ps.setEnabled(cb.isChecked() and pnl.isChecked())
+            pin_on = any(fach_rows[fk][0].isChecked() for fk in PINONES)
+            for x in pin_w:
+                x.setEnabled(pin_on)
+            for x in pnl_w:
+                x.setEnabled(pnl.isChecked())
+        for cb, _h, _p in fach_rows.values():
+            cb.toggled.connect(sync_fach)
+        pnl.toggled.connect(sync_fach)
+        sync_fach()
+
         info = QLabel()
         info.setWordWrap(True)
         lay.addWidget(info)
@@ -1617,12 +2043,32 @@ class MeasureDialog:
         tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         lay.addWidget(tbl)
         lay.addWidget(QLabel(tr("m_note")))
+        prs = panel_rows(nave_data(nave).get("params"))
+        if prs:
+            ph = list(tr("ph"))
+            ptbl = QTableWidget(len(prs) + 1, len(ph))
+            ptbl.setHorizontalHeaderLabels(ph)
+            lines += ["", "\t".join(ph)]
+            for i, (fa, u, a, v) in enumerate(prs):
+                vals = [fa, str(u), _num(a, 2), _num(v, 3)]
+                lines.append("\t".join(vals))
+                for j, val in enumerate(vals):
+                    ptbl.setItem(i, j, QTableWidgetItem(val))
+            tot = [tr("m_total"), str(sum(r[1] for r in prs)),
+                   _num(sum(r[2] for r in prs), 2), _num(sum(r[3] for r in prs), 3)]
+            lines.append("\t".join(tot))
+            for j, val in enumerate(tot):
+                ptbl.setItem(len(prs), j, QTableWidgetItem(val))
+            ptbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+            ptbl.setEditTriggers(QTableWidget.NoEditTriggers)
+            lay.addWidget(QLabel(f"<b>{tr('m_panels')}</b>"))
+            lay.addWidget(ptbl)
         bb = QDialogButtonBox(QDialogButtonBox.Close)
         copy_btn = bb.addButton(tr("m_copy"), QDialogButtonBox.ActionRole)
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText("\n".join(lines)))
         bb.rejected.connect(dlg.reject)
         lay.addWidget(bb)
-        dlg.resize(820, 420)
+        dlg.resize(820, 600 if prs else 420)
         dlg.exec()
 
 
@@ -1662,7 +2108,9 @@ def outliner_kind(group):
     return {"type": tr("nave"), "props": [
         (tr("o_luz"), f"{g.L:.2f} m"), (tr("o_long"), f"{g.Ln:.2f} m"),
         (tr("o_alero"), alero), (tr("o_port"), port),
-        (tr("o_acero"), f"{_num(kg)} kg")]}
+        (tr("o_acero"), f"{_num(kg)} kg")] + (
+        [(tr("o_paneles"), f"{sum(r[1] for r in panel_rows(p))} "
+          f"({_num(sum(r[2] for r in panel_rows(p)), 1)} m²)")] if panel_rows(p) else [])}
 
 
 def setup(app) -> None:

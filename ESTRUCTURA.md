@@ -1,30 +1,32 @@
 # Estructura del código — `portico_nave.py`
 
 Índice de referencia para localizar y solicitar modificaciones. Los números de
-línea son orientativos (versión 1.1).
+línea son orientativos (versión 1.2).
 
 ## Índice por bloques
 
 | Ámbito | Bloque | Líneas aprox. |
 |---|---|---|
-| Idioma: textos en español e inglés | `_S`, `lang`, `set_lang`, `tr` | 75–318 |
-| Catálogo de perfiles (IPE, HEA, HEB) | `_IPE`, `_HEA`, `_HEB`, `PROFILES` | 318–356 |
-| Parámetros y valores por defecto | `DEFAULTS`, `LEGACY` | 358–388 |
-| Etiquetas y materiales | `LAYER_KEYS`, `MAT_RGB`, `layer_name` | 390–397 |
-| Saneado de parámetros | `normalize` | 408–433 |
-| Geometría de cada faldón y fachada | clase `Side` | 436–467 |
-| Geometría general, comprobaciones y avisos | clase `Geo` | 470–630 |
-| Secciones 2D (I, C, Z, U) | `i_section` … `u_section` | 637–681 |
-| Generación de sólidos (prismas, redondos) | `prism`, `rod`, `_group`, `_container` | 688–783 |
-| Construcción de la nave | clase `_Builder`, `build_nave` | 811–1066 |
-| Pórticos (interiores y extremos) | `_Builder.frame_parts`, `_Builder.frames` | 900–955 |
-| Cruces de San Andrés | `_Builder.bracing` | 1011–1052 |
-| Medición de acero | `measurement`, `summary` | 1071–1167 |
-| Creación, edición y deshacer | `make_nave`, `rebuild_nave`, `_run` | 1184–1232 |
-| Órdenes | `nueva`, `editar`, `medicion` | 1256–1300 |
-| Cuadro de parámetros | `NaveDialog` | 1315–1558 |
-| Tabla de medición | `MeasureDialog` | 1561–1600 |
-| Registro de menús y Explorador | `setup`, `outliner_kind` | 1606–1656 |
+| Idioma: textos en español e inglés | `_S`, `lang`, `set_lang`, `tr` | 85–395 |
+| Catálogo de perfiles (IPE, HEA, HEB, UPE, UPN) | `_IPE` … `_UPN`, `PROFILES` | 399–450 |
+| Parámetros, valores por defecto y fachadas | `FACADES`, `DEFAULTS`, `LEGACY` | 452–500 |
+| Etiquetas y materiales | `LAYER_KEYS`, `MAT_RGB`, `layer_name` | 500–508 |
+| Saneado de parámetros | `normalize` | 519–549 |
+| Geometría de cada faldón y fachada | clase `Side` | 552–587 |
+| Geometría general, avisos, arriostramiento | clase `Geo` | 590–905 |
+| Fachadas: comprobaciones, perfiles y paneles | `Geo.facades_on` … `Geo.panel_summary` | 733–875 |
+| Secciones 2D (I, C, Z, U) | `i_section` … `u_section` | 909–962 |
+| Generación de sólidos (prismas, redondos) | `prism`, `rod`, `_group`, `_container` | 967–1062 |
+| Construcción de la nave | clase `_Builder`, `build_nave` | 1090–1440 |
+| Pórticos (interiores y extremos) | `_Builder.frame_parts`, `_Builder.frames` | 1181–1236 |
+| Cruces de San Andrés | `_Builder.bracing` | 1292–1335 |
+| Fachadas (perfiles de piñón y paneles) | `_Builder.facades`, `_frame_matrix` | 1337–1422 |
+| Medición de acero y de paneles | `measurement`, `panel_rows`, `summary` | 1443–1563 |
+| Creación, edición y deshacer | `make_nave`, `rebuild_nave`, `_run` | 1581–1630 |
+| Órdenes | `nueva`, `editar`, `medicion` | 1653–1698 |
+| Cuadro de parámetros | `NaveDialog` | 1712–2011 |
+| Tablas de medición | `MeasureDialog` | 2014–2076 |
+| Registro de menús y Explorador | `setup`, `outliner_kind` | 2079–2131 |
 
 ## Puntos afectados por un parámetro nuevo
 
@@ -61,6 +63,14 @@ Añadir un parámetro exige, por lo general, modificar:
   del arranque a la cara inferior del dintel en el pilar. Cubierta: plano
   paralelo al faldón, a un cuarto del canto del dintel más pequeño bajo la
   cara superior, de la cara interior del pilar a la cumbrera.
+- Fachadas: cuatro (`frontal`, `posterior`, `izq`, `der`), cada una con
+  `fach_<clave>` (activa), `fach_h_<clave>` (altura de fachada) y
+  `panel_h_<clave>` (altura de placa). Piñones por delante de los pórticos
+  primero y último: perfil U de esquina con el alma enrasada con la cara
+  exterior del pilar y perfiles intermedios a una separación máxima; los
+  perfiles tienen la altura de su fachada. Laterales: paneles de alma a alma
+  de pilar, dentro de la H del pilar, contra el ala exterior. Con paneles
+  laterales, las cruces de fachada pasan al hueco entre panel y ala interior.
 - Ménsula: cota de su cara superior; vuelo desde la cara interior del pilar al
   eje de la viga carril.
 - Pesos nominales de catálogo; acero 7 850 kg/m³.

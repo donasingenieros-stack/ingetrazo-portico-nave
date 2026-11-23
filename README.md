@@ -19,12 +19,19 @@ metálicos a dos aguas, paramétrica y editable.
   interferencia con el dintel y la cartela.
 - Cruces de San Andrés en redondo macizo, en cubierta y en fachadas
   laterales, en los vanos extremos o en todos.
+- Fachadas de paneles de hormigón en las cuatro fachadas, cada una con su
+  altura de fachada y su altura de placa. Piñones (pórticos primero y último):
+  perfil U (UPE o UPN) en las esquinas, con el alma enrasada con la cara
+  exterior del pilar, y perfiles HEA, HEB o IPE intermedios por delante del
+  pórtico. Laterales: paneles de pilar a pilar dentro de la H del pilar.
+  Medición de paneles (unidades, m² y m³) por fachada.
 
 Cada pórtico es un componente: los interiores comparten una definición y los
 extremos otra (una sola si el dintel es el mismo). Dentro de ellos, pilares,
 dinteles, cartelas y ménsulas son también componentes. Las piezas llevan
-etiquetas (Estructura, Correas, Canalones, Puente grúa, Arriostramientos) y
-clase BIM (IfcColumn, IfcBeam, IfcMember), de modo que la exportación IFC
+etiquetas (Estructura, Correas, Canalones, Puente grúa, Arriostramientos,
+Fachada perfiles, Fachada paneles) y
+clase BIM (IfcColumn, IfcBeam, IfcMember, IfcWall), de modo que la exportación IFC
 sale clasificada.
 
 Interfaz en español e inglés: el idioma se elige en el cuadro de parámetros y
