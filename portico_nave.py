@@ -45,6 +45,8 @@ Convenios geométricos:
   exterior del pilar, en cada fachada.
 * Con aleros distintos la pendiente es común y la cumbrera se desplaza hacia
   la fachada más alta.
+* Unión pilar–dintel: el pilar sube por encima de la cara superior del
+  dintel (5 cm por defecto) y el dintel arranca en la cara interior del pilar.
 * La cota de la ménsula es la de su cara superior (apoyo de la viga carril);
   el vuelo se mide desde la cara interior del pilar al eje de la viga carril.
 * Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
@@ -131,6 +133,10 @@ _S = {
                 "The bracket reach is less than half the runway beam width."),
     "c_ridge": ("La viga carril sobrepasa la cumbrera{where}.",
                 "The runway beam goes past the ridge{where}."),
+    "c_purlin": ("La primera correa apoya sobre la cabeza del pilar; la distancia al alero "
+                 "debe ser al menos {dmin:.0f} mm.",
+                 "The first purlin sits on the column head; the distance to the eaves "
+                 "must be at least {dmin:.0f} mm."),
     "c_info_brace": ("Con un solo pórtico no se generan cruces de San Andrés.",
                      "No cross bracing is generated with a single frame."),
     # Lados y tipos de pórtico
@@ -162,6 +168,8 @@ _S = {
     "f_sep": ("Separación entre pórticos", "Frame spacing"),
     "f_pilar": ("Perfil de pilares", "Column section"),
     "f_dintel": ("Perfil de dinteles", "Rafter section"),
+    "f_sobre": ("Pilar: altura sobre la cara superior del dintel",
+                "Column: height above the top of the rafter"),
     "f_dext_on": ("Dintel distinto en los pórticos extremos (primero y último)",
                   "Different rafter in the end frames (first and last)"),
     "f_dext": ("Perfil de dintel en pórticos extremos", "End-frame rafter section"),
@@ -201,10 +209,10 @@ _S = {
     "f_arec": ("Recuadros por faldón (cubierta)", "Panels per slope (roof)"),
     "f_afn": ("Recuadros en altura (fachada)", "Panels in height (wall)"),
     "f_ad": ("Diámetro del redondo", "Rod diameter"),
-    "f_brace_note": ("Redondo macizo. Cubierta: de eje de pilar a cumbrera. "
-                     "Fachada: de arranque a cabeza de pilar.",
-                     "Solid round bar. Roof: column axis to ridge. "
-                     "Wall: column base to column head."),
+    "f_brace_note": ("Redondo macizo. Cubierta: de cara interior de pilar a cumbrera. "
+                     "Fachada: de arranque de pilar a cara inferior del dintel.",
+                     "Solid round bar. Roof: inner face of column to ridge. "
+                     "Wall: column base to rafter underside."),
     # Medición
     "mh": (("Elemento", "Perfil", "Ud.", "Long. unit. (m)", "kg/m", "Total (kg)"),
            ("Element", "Section", "No.", "Unit length (m)", "kg/m", "Total (kg)")),
@@ -363,7 +371,7 @@ DEFAULTS = {
     "luz": 16.0, "alero": 8.0, "alero_der": 8.0, "pendiente": 10.0,   # pendiente en %
     "n_porticos": 5, "separacion": 5.0,
     # Pilares y dinteles
-    "pilar": "HEA 300", "dintel": "IPE 360",
+    "pilar": "HEA 300", "dintel": "IPE 360", "pilar_sobre": 0.05,
     "dintel_ext_on": False, "dintel_ext": "IPE 300",
     # Cartelas (0 = sin cartela)
     "cart_alero_l": 1.60, "cart_alero_h": 0.36,
@@ -371,7 +379,7 @@ DEFAULTS = {
     # Correas
     "correa_tipo": "C", "correa_h": 0.200, "correa_b": 0.070,
     "correa_e": 0.0025, "correa_c": 0.020, "correa_ipe": "IPE 140",
-    "correa_sep": 1.50, "correa_d_alero": 0.15, "correa_d_cumbrera": 0.15,
+    "correa_sep": 1.50, "correa_d_alero": 0.40, "correa_d_cumbrera": 0.15,
     "correa_vuelo": 0.0,
     # Canalón
     "canalon": True, "canalon_a": 0.30, "canalon_h": 0.20, "canalon_e": 0.002,
@@ -446,8 +454,12 @@ class Side:
         self.rafter = rafter
         self.hd, self.bd, self.twd, self.tfd, self.kgd = PROFILES[rafter]
         self.hv = self.hd / geo.ca       # canto del dintel en vertical
-        self.Hp = self.z_under(geo.hp)   # longitud del pilar
-        self.Lslope = xs / geo.ca        # longitud del faldón
+        # Unión pilar–dintel: el pilar sube por encima del dintel y el dintel
+        # arranca en la cara interior del pilar.
+        self.Hp = self.z_top(geo.hp) + geo.p["pilar_sobre"]   # longitud del pilar
+        self.z_knee = self.z_under(geo.hp)   # cara inferior del dintel en el pilar
+        self.Lslope = xs / geo.ca            # faldón, desde la cara exterior del pilar
+        self.Lrafter = (xs - geo.hp) / geo.ca   # dintel, desde la cara interior
 
     def z_top(self, x: float) -> float:
         """Cota de la cara superior del dintel en la abscisa x."""
@@ -561,12 +573,23 @@ class Geo:
 
     # --- Puente grúa ----------------------------------------------------
 
+    def purlin_check(self) -> list[str]:
+        """Aviso si la primera correa apoya sobre la cabeza del pilar."""
+        poly, _kg, _h = self.purlin_section()
+        umin = min(u for u, _w in poly)
+        a0 = self.purlin_positions("l")[0]
+        if (a0 + umin) * self.ca < self.hp - 1e-6:
+            dmin = (self.hp / self.ca - umin) * 1000
+            return [tr("c_purlin", dmin=dmin)]
+        return []
+
     def crane_check(self) -> list[str]:
-        """Avisos de interferencia del puente grúa con dintel y cartela."""
+        """Avisos de interferencia: correas con la cabeza del pilar y puente
+        grúa con dintel y cartela."""
         p = self.p
+        out = self.purlin_check()
         if not p["grua"]:
-            return []
-        out = []
+            return out
         hm = PROFILES[p["mensula"]][0]
         hvc, bvc = PROFILES[p["viga_carril"]][:2]
         x = self.hp + p["mensula_vuelo"]
@@ -622,12 +645,13 @@ class Geo:
         """Abscisas (coordenadas del faldón) de los nudos de las cruces de cubierta."""
         side = self.side(sd)
         k = self.p["arr_recuadros"]
-        x0 = self.hp / 2
+        x0 = self.hp
         return [x0 + j * (side.xs - x0) / k for j in range(k + 1)]
 
     def wall_brace_top(self, sd: str) -> float:
-        """Cabeza de las cruces de fachada: el pilar más corto de ese lado."""
-        return min(self.side(sd, kind).Hp for kind in self.kinds_used())
+        """Cabeza de las cruces de fachada: cara inferior del dintel más bajo
+        en el pilar de ese lado."""
+        return min(self.side(sd, kind).z_knee for kind in self.kinds_used())
 
 
 # ---------------------------------------------------------------------------
@@ -840,11 +864,13 @@ class _Builder:
 
     def rafter_mesh(self, side: Side):
         def make():
-            zc = side.H - side.hv / 2
+            x0 = self.g.hp                      # cara interior del pilar
+            zc = side.z_top(x0) - side.hv / 2
+            run = side.xs - x0
             m = _mesh()
-            prism(m, [(0.0, u, zc + w / self.g.ca)
+            prism(m, [(x0, u, zc + w / self.g.ca)
                       for u, w in i_section(side.hd, side.bd, side.twd, side.tfd)],
-                  (side.xs, 0, side.xs * side.t), self.est)
+                  (run, 0, run * side.t), self.est)
             return m
         return self.cached(("raf", round(side.H, 6), round(side.xs, 6), side.rafter), make)
 
@@ -1104,7 +1130,7 @@ def measurement(params) -> list[tuple]:
     for kind in kinds:
         for sd in ("l", "r"):
             side = g.side(sd, kind)
-            add(label("r_din", sd, kind), side.rafter, count[kind], side.Lslope, side.kgd)
+            add(label("r_din", sd, kind), side.rafter, count[kind], side.Lrafter, side.kgd)
     Lc, hc = p["cart_alero_l"], p["cart_alero_h"]
     if Lc > 0 and hc > 0:
         for kind in kinds:
@@ -1431,6 +1457,7 @@ class NaveDialog:
         f = page("tab_frame")
         profile(f, "pilar", "f_pilar")
         profile(f, "dintel", "f_dintel")
+        length(f, "pilar_sobre", "f_sobre", 0.0, 1.0, 3, 0.01)
         dext_on = check(f, "dintel_ext_on", "f_dext_on")
         dext = profile(f, "dintel_ext", "f_dext")
         enable_with(dext_on, [dext])

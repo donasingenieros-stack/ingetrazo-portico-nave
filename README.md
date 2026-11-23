@@ -52,6 +52,8 @@ vez publicada en el catálogo.
 - Luz: distancia entre caras exteriores de pilares.
 - Altura de alero: cota de la cara superior del dintel en la cara exterior del
   pilar, en cada fachada.
+- Unión pilar–dintel: el pilar sube 5 cm (ajustable) sobre la cara superior
+  del dintel y el dintel arranca en la cara interior del pilar.
 - Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
   plano paralelo al faldón, bajo la cara superior del dintel.
 - Cota de ménsula: cara superior (apoyo de la viga carril). Vuelo: de la cara

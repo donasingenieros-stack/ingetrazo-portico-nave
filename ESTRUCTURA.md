@@ -52,13 +52,15 @@ Añadir un parámetro exige, por lo general, modificar:
 - Cada faldón se calcula en sus propias coordenadas (`Side`: x desde la cara
   exterior del pilar de esa fachada). El lado derecho se coloca con un giro de
   180° (`R0` dentro del pórtico, `R` en piezas longitudinales).
+- Unión pilar–dintel: el pilar sube `pilar_sobre` (5 cm por defecto) sobre
+  la cara superior del dintel en la cara interior del pilar; el dintel arranca
+  en la cara interior del pilar (corte a plomo).
 - Pórticos extremos (primero y último): dintel `dintel_ext` si
-  `dintel_ext_on`; su pilar es más largo o más corto según el canto del
-  dintel, porque la cota de alero se mantiene.
+  `dintel_ext_on`; la cota de alero y la cabeza de pilar se mantienen.
 - Cruces de San Andrés: redondo macizo. Fachada: plano del eje de pilares,
-  del arranque a la cabeza del pilar más corto del lado. Cubierta: plano
+  del arranque a la cara inferior del dintel en el pilar. Cubierta: plano
   paralelo al faldón, a un cuarto del canto del dintel más pequeño bajo la
-  cara superior, del eje del pilar a la cumbrera.
+  cara superior, de la cara interior del pilar a la cumbrera.
 - Ménsula: cota de su cara superior; vuelo desde la cara interior del pilar al
   eje de la viga carril.
 - Pesos nominales de catálogo; acero 7 850 kg/m³.
