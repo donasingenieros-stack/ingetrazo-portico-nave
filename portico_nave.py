@@ -1729,7 +1729,7 @@ class NaveDialog:
                                        QWidget)
         dlg = QDialog(viewport.window())
         dlg.setWindowTitle(f"{title()} — {title_fn()}")
-        dlg.setMinimumWidth(640)
+        dlg.setMinimumWidth(760)
         lay = QVBoxLayout(dlg)
         top = QFormLayout()
         lang_cb = QComboBox()
@@ -1911,7 +1911,8 @@ class NaveDialog:
             ps.setSuffix(" m")
             ps.setValue(p0["panel_h_" + fk])
             w["panel_h_" + fk] = ps
-            grid.addWidget(QLabel(tr("fk_" + fk)), r, 0)
+            lab = tr("fk_" + fk)
+            grid.addWidget(QLabel(lab[:1].upper() + lab[1:]), r, 0)
             grid.addWidget(cb, r, 1)
             grid.addWidget(hs, r, 2)
             grid.addWidget(ps, r, 3)
