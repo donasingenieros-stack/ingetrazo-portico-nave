@@ -7,11 +7,18 @@ Extensiones ▸ Pórtico de nave ▸ Nueva nave… genera, con un cuadro de
 parámetros, una nave de pórticos metálicos a dos aguas:
 
 * pilares y dinteles IPE / HEA / HEB, con cartelas de alero y de cumbrera
-  (alma y ala inferior en chapa);
+  (alma y ala inferior en chapa); dintel opcionalmente distinto en los
+  pórticos extremos (primero y último);
+* alturas de alero independientes en cada fachada (cumbrera desplazada,
+  misma pendiente en ambos faldones);
 * correas C o Z conformadas, o IPE, repartidas por faldón con una
   separación máxima;
 * canalón exterior en U;
-* puente grúa opcional: ménsulas en los pilares y viga carril.
+* puente grúa opcional: ménsulas en los pilares y viga carril;
+* cruces de San Andrés (redondo macizo) en cubierta y en fachadas
+  laterales, en los vanos extremos o en todos.
+
+Interfaz en español e inglés (selector en el cuadro de parámetros).
 
 Organización del modelo (lo que muestra el Explorador):
 
@@ -19,13 +26,13 @@ Organización del modelo (lo que muestra el Explorador):
   ``group.ext["portico_nave"]``, viajan con las copias y con el .igz, y
   **Editar nave…** la vuelve a generar en el mismo sitio (aunque se haya
   movido o girado);
-* cada pórtico es un COMPONENTE: los n pórticos comparten una única
-  definición, y dentro de ella pilares, dinteles, cartelas y ménsulas son a
-  su vez componentes (el pilar izquierdo y el derecho comparten geometría);
-* correas, canalones y vigas carril van en grupos propios, cada pieza como
-  instancia de un componente;
-* etiquetas (capas) Estructura, Correas, Canalones y Puente grúa, y clases
-  BIM IfcColumn / IfcBeam / IfcMember para la exportación IFC.
+* cada pórtico es un COMPONENTE: los pórticos interiores comparten una
+  definición y los extremos otra (una sola si el dintel es el mismo); dentro
+  de ellas, pilares, dinteles, cartelas y ménsulas son a su vez componentes;
+* correas, canalones, vigas carril y cruces van en grupos propios, cada pieza
+  como instancia de un componente;
+* etiquetas (capas) Estructura, Correas, Canalones, Puente grúa y
+  Arriostramientos, y clases BIM IfcColumn / IfcBeam / IfcMember.
 
 Coordenadas locales de la nave (metros): X a lo largo de la luz (0 = cara
 exterior del pilar izquierdo), Y a lo largo de la nave (0 = primer pórtico),
@@ -35,9 +42,14 @@ Convenios geométricos:
 
 * «Luz» es la distancia entre caras exteriores de pilares.
 * «Altura de alero» es la cota de la cara superior del dintel en la cara
-  exterior del pilar.
+  exterior del pilar, en cada fachada.
+* Con aleros distintos la pendiente es común y la cumbrera se desplaza hacia
+  la fachada más alta.
 * La cota de la ménsula es la de su cara superior (apoyo de la viga carril);
   el vuelo se mide desde la cara interior del pilar al eje de la viga carril.
+* Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
+  plano paralelo al faldón, a un cuarto del canto del dintel bajo su cara
+  superior.
 """
 from __future__ import annotations
 
@@ -53,11 +65,255 @@ from core.history import SnapshotImport
 
 log = logging.getLogger("ingetrazo.plugins.portico_nave")
 
-__version__ = "1.0"
+__version__ = "1.1"
 
 KEY = Path(__file__).stem            # = ExtensionApp.key
-TITLE = "Pórtico de nave"
 STEEL = 7850.0                       # kg/m³
+
+# ---------------------------------------------------------------------------
+# Idioma
+# ---------------------------------------------------------------------------
+
+LANGS = (("es", "Español"), ("en", "English"))
+_LANG: str | None = None
+
+_S = {
+    # Generales
+    "title": ("Pórtico de nave", "Portal-frame shed"),
+    "nave": ("Nave", "Shed"),
+    "lang": ("Idioma / Language", "Idioma / Language"),
+    # Menús y órdenes
+    "m_new": ("Nueva nave…", "New shed…"),
+    "m_edit": ("Editar nave…", "Edit shed…"),
+    "m_meas": ("Medición de acero…", "Steel take-off…"),
+    "t_new": ("Nueva nave", "New shed"),
+    "t_edit": ("Editar — {name}", "Edit — {name}"),
+    "t_meas": ("Medición de acero — {name}", "Steel take-off — {name}"),
+    "ok_new": ("nave creada.", "shed created."),
+    "ok_edit": ("«{name}» actualizada.", "“{name}” updated."),
+    "w_close_group": ("Cierre el grupo que está editando y vuelva a ejecutar la orden.",
+                      "Close the group you are editing and run the command again."),
+    "w_select": ("Seleccione una nave creada con Pórtico de nave.",
+                 "Select a shed created with Portal-frame shed."),
+    "w_not_nave": ("«{name}» no es una nave de Pórtico de nave.",
+                   "“{name}” is not a Portal-frame shed."),
+    "w_anyway": ("¿Generar la nave de todos modos?", "Generate the shed anyway?"),
+    # Errores
+    "e_pos": ("La luz y las alturas de alero deben ser positivas.",
+              "Span and eaves heights must be positive."),
+    "e_n": ("Debe haber al menos un pórtico.", "There must be at least one frame."),
+    "e_sep": ("La separación entre pórticos debe ser positiva.",
+              "Frame spacing must be positive."),
+    "e_slope": ("La pendiente debe estar entre 0 % y 100 %.",
+                "Roof pitch must be between 0 % and 100 %."),
+    "e_cols": ("Los pilares no caben en la luz indicada.",
+               "The columns do not fit in the given span."),
+    "e_low": ("La altura de alero es insuficiente para el dintel elegido ({side}).",
+              "The eaves height is too low for the chosen rafter ({side})."),
+    "e_flat": ("Con pendiente 0 % las dos alturas de alero deben ser iguales.",
+               "With a 0 % pitch both eaves heights must be equal."),
+    "e_ridge": ("Con aleros de {hl:.2f} y {hr:.2f} m la pendiente debe ser mayor que {tmin:.2f} %.",
+                "With eaves at {hl:.2f} and {hr:.2f} m the pitch must exceed {tmin:.2f} %."),
+    "e_purlin": ("Dimensiones de correa incoherentes.", "Inconsistent purlin dimensions."),
+    "e_purlin_sep": ("La separación máxima de correas debe ser positiva.",
+                     "Maximum purlin spacing must be positive."),
+    "e_gutter": ("Dimensiones de canalón incoherentes.", "Inconsistent gutter dimensions."),
+    "e_brace": ("El diámetro del redondo y el número de recuadros deben ser positivos.",
+                "Rod diameter and number of panels must be positive."),
+    # Avisos de puente grúa
+    "c_clash": ("La viga carril (cara superior a {top:.3f} m) interfiere con el dintel o la "
+                "cartela (cara inferior a {free:.3f} m en su vertical){where}.",
+                "The runway beam (top at {top:.3f} m) clashes with the rafter or haunch "
+                "(underside at {free:.3f} m above it){where}."),
+    "c_low": ("La ménsula queda por debajo del arranque del pilar.",
+              "The bracket lies below the column base."),
+    "c_vuelo": ("El vuelo de la ménsula es menor que la semianchura de la viga carril.",
+                "The bracket reach is less than half the runway beam width."),
+    "c_ridge": ("La viga carril sobrepasa la cumbrera{where}.",
+                "The runway beam goes past the ridge{where}."),
+    "c_info_brace": ("Con un solo pórtico no se generan cruces de San Andrés.",
+                     "No cross bracing is generated with a single frame."),
+    # Lados y tipos de pórtico
+    "side_l": ("fachada izquierda", "left side"),
+    "side_r": ("fachada derecha", "right side"),
+    "kind_ext": ("pórticos extremos", "end frames"),
+    "kind_int": ("pórticos interiores", "interior frames"),
+    # Resumen
+    "sum": ("Nave {L:.2f} × {Ln:.2f} m · {n} pórticos · {cor} · acero ≈ {kg} kg",
+            "Shed {L:.2f} × {Ln:.2f} m · {n} frames · {cor} · steel ≈ {kg} kg"),
+    "sum_cor": ("{k} correas por faldón", "{k} purlins per slope"),
+    "sum_cor2": ("correas por faldón {kl} / {kr}", "purlins per slope {kl} / {kr}"),
+    # Pestañas y campos
+    "tab_geo": ("Geometría", "Geometry"),
+    "tab_frame": ("Pilares y dinteles", "Columns and rafters"),
+    "tab_purlin": ("Correas", "Purlins"),
+    "tab_gutter": ("Canalón", "Gutter"),
+    "tab_crane": ("Puente grúa", "Crane runway"),
+    "tab_brace": ("Arriostramiento", "Bracing"),
+    "f_luz": ("Luz (caras exteriores de pilares)", "Span (outer faces of columns)"),
+    "f_alero": ("Altura de alero, fachada izquierda", "Eaves height, left side"),
+    "f_alero_der": ("Altura de alero, fachada derecha", "Eaves height, right side"),
+    "f_alero_note": ("Cara superior del dintel en la cara exterior del pilar. Con aleros "
+                     "distintos la cumbrera se desplaza; la pendiente es la misma en ambos faldones.",
+                     "Top of rafter at the outer face of the column. With different eaves the "
+                     "ridge shifts; both slopes keep the same pitch."),
+    "f_pend": ("Pendiente", "Roof pitch"),
+    "f_n": ("Número de pórticos", "Number of frames"),
+    "f_sep": ("Separación entre pórticos", "Frame spacing"),
+    "f_pilar": ("Perfil de pilares", "Column section"),
+    "f_dintel": ("Perfil de dinteles", "Rafter section"),
+    "f_dext_on": ("Dintel distinto en los pórticos extremos (primero y último)",
+                  "Different rafter in the end frames (first and last)"),
+    "f_dext": ("Perfil de dintel en pórticos extremos", "End-frame rafter section"),
+    "f_ca_l": ("Cartela de alero: longitud", "Eaves haunch: length"),
+    "f_ca_h": ("Cartela de alero: canto", "Eaves haunch: depth"),
+    "f_ck_l": ("Cartela de cumbrera: semilongitud", "Ridge haunch: half-length"),
+    "f_ck_h": ("Cartela de cumbrera: canto", "Ridge haunch: depth"),
+    "f_cart_note": ("Longitud o canto 0 = sin cartela.", "Length or depth 0 = no haunch."),
+    "f_ctipo": ("Tipo", "Type"),
+    "f_ch": ("Canto", "Depth"),
+    "f_cb": ("Ala", "Flange"),
+    "f_ce": ("Espesor", "Thickness"),
+    "f_cc": ("Labio", "Lip"),
+    "f_cipe": ("Perfil IPE", "IPE section"),
+    "f_csep": ("Separación máxima", "Maximum spacing"),
+    "f_cda": ("Distancia al alero (sobre faldón)", "Distance to eaves (along slope)"),
+    "f_cdc": ("Distancia a la cumbrera (sobre faldón)", "Distance to ridge (along slope)"),
+    "f_cv": ("Vuelo sobre los pórticos extremos", "Overhang beyond end frames"),
+    "p_C": ("C conformada", "Cold-formed C"),
+    "p_Z": ("Z conformada", "Cold-formed Z"),
+    "p_IPE": ("IPE laminado", "Hot-rolled IPE"),
+    "f_can": ("Canalón exterior en U", "External U gutter"),
+    "f_cana": ("Anchura", "Width"),
+    "f_canh": ("Altura", "Height"),
+    "f_cane": ("Espesor de chapa", "Sheet thickness"),
+    "f_grua": ("Ménsulas y viga carril de puente grúa", "Crane brackets and runway beam"),
+    "f_mens": ("Perfil de ménsula", "Bracket section"),
+    "f_mz": ("Cota de apoyo (cara superior de ménsula)", "Bearing level (top of bracket)"),
+    "f_mv": ("Vuelo (cara interior del pilar a eje de viga carril)",
+             "Reach (inner face of column to runway beam axis)"),
+    "f_vc": ("Perfil de viga carril", "Runway beam section"),
+    "f_acub": ("Cruces de San Andrés en cubierta", "Roof cross bracing"),
+    "f_afach": ("Cruces de San Andrés en fachadas laterales", "Side-wall cross bracing"),
+    "f_avanos": ("Vanos arriostrados", "Braced bays"),
+    "v_extremos": ("Vanos extremos", "End bays"),
+    "v_todos": ("Todos los vanos", "All bays"),
+    "f_arec": ("Recuadros por faldón (cubierta)", "Panels per slope (roof)"),
+    "f_afn": ("Recuadros en altura (fachada)", "Panels in height (wall)"),
+    "f_ad": ("Diámetro del redondo", "Rod diameter"),
+    "f_brace_note": ("Redondo macizo. Cubierta: de eje de pilar a cumbrera. "
+                     "Fachada: de arranque a cabeza de pilar.",
+                     "Solid round bar. Roof: column axis to ridge. "
+                     "Wall: column base to column head."),
+    # Medición
+    "mh": (("Elemento", "Perfil", "Ud.", "Long. unit. (m)", "kg/m", "Total (kg)"),
+           ("Element", "Section", "No.", "Unit length (m)", "kg/m", "Total (kg)")),
+    "m_total": ("TOTAL", "TOTAL"),
+    "m_note": ("Pesos nominales de catálogo, sin uniones, placas ni rigidizadores.",
+               "Nominal catalogue weights, without connections, plates or stiffeners."),
+    "m_copy": ("Copiar (para Excel)", "Copy (for Excel)"),
+    "r_pil": ("Pilares", "Columns"),
+    "r_din": ("Dinteles", "Rafters"),
+    "r_ca": ("Cartelas de alero", "Eaves haunches"),
+    "r_ck": ("Cartelas de cumbrera", "Ridge haunches"),
+    "r_cor": ("Correas", "Purlins"),
+    "r_can": ("Canalones", "Gutters"),
+    "r_mens": ("Ménsulas", "Brackets"),
+    "r_vc": ("Vigas carril", "Runway beams"),
+    "r_acub": ("Cruces de cubierta", "Roof bracing"),
+    "r_afach": ("Cruces de fachada", "Wall bracing"),
+    "r_plate": ("chapa e={tw:.1f}/{tf:.1f} mm", "plate t={tw:.1f}/{tf:.1f} mm"),
+    # Explorador
+    "o_luz": ("Luz", "Span"),
+    "o_long": ("Longitud", "Length"),
+    "o_alero": ("Alero", "Eaves"),
+    "o_port": ("Pórticos", "Frames"),
+    "o_acero": ("Acero", "Steel"),
+    # Nombres del modelo
+    "n_frame": ("Pórtico {i}", "Frame {i}"),
+    "n_col_l": ("Pilar izquierdo", "Left column"),
+    "n_col_r": ("Pilar derecho", "Right column"),
+    "n_raf_l": ("Dintel izquierdo", "Left rafter"),
+    "n_raf_r": ("Dintel derecho", "Right rafter"),
+    "n_ca_l": ("Cartela de alero izquierda", "Left eaves haunch"),
+    "n_ca_r": ("Cartela de alero derecha", "Right eaves haunch"),
+    "n_ck": ("Cartela de cumbrera", "Ridge haunch"),
+    "n_me_l": ("Ménsula izquierda", "Left bracket"),
+    "n_me_r": ("Ménsula derecha", "Right bracket"),
+    "n_cor": ("Correas", "Purlins"),
+    "n_cor_l": ("Correa I-{k}", "Purlin L-{k}"),
+    "n_cor_r": ("Correa D-{k}", "Purlin R-{k}"),
+    "n_can": ("Canalones", "Gutters"),
+    "n_can_l": ("Canalón izquierdo", "Left gutter"),
+    "n_can_r": ("Canalón derecho", "Right gutter"),
+    "n_pg": ("Puente grúa", "Crane runway"),
+    "n_vc_l": ("Viga carril izquierda", "Left runway beam"),
+    "n_vc_r": ("Viga carril derecha", "Right runway beam"),
+    "n_arr": ("Arriostramientos", "Bracing"),
+    "n_acub_l": ("Cruz de cubierta izquierda, vano {j}", "Left roof bracing, bay {j}"),
+    "n_acub_r": ("Cruz de cubierta derecha, vano {j}", "Right roof bracing, bay {j}"),
+    "n_afach_l": ("Cruz de fachada izquierda, vano {j}", "Left wall bracing, bay {j}"),
+    "n_afach_r": ("Cruz de fachada derecha, vano {j}", "Right wall bracing, bay {j}"),
+    # Etiquetas y materiales
+    "ly_est": ("Estructura", "Structure"),
+    "ly_cor": ("Correas", "Purlins"),
+    "ly_can": ("Canalones", "Gutters"),
+    "ly_pg": ("Puente grúa", "Crane runway"),
+    "ly_arr": ("Arriostramientos", "Bracing"),
+    "mt_est": ("Acero estructural", "Structural steel"),
+    "mt_cor": ("Acero correas", "Purlin steel"),
+    "mt_can": ("Chapa canalón", "Gutter sheet"),
+    "mt_pg": ("Acero puente grúa", "Crane runway steel"),
+    "mt_arr": ("Acero arriostramientos", "Bracing steel"),
+}
+
+
+def lang() -> str:
+    """Idioma activo: preferencia guardada o, en su defecto, el de la configuración regional."""
+    global _LANG
+    if _LANG is None:
+        _LANG = "es"
+        try:
+            from PySide6.QtCore import QLocale, QSettings
+            saved = QSettings("IngeTrazo", KEY).value("lang")
+            if saved in dict(LANGS):
+                _LANG = saved
+            elif QLocale().name().lower().startswith("en"):
+                _LANG = "en"
+        except Exception:  # noqa: BLE001
+            pass
+    return _LANG
+
+
+def set_lang(code: str) -> None:
+    global _LANG
+    if code not in dict(LANGS):
+        return
+    _LANG = code
+    try:
+        from PySide6.QtCore import QSettings
+        QSettings("IngeTrazo", KEY).setValue("lang", code)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def tr(key: str, **kw):
+    es, en = _S[key]
+    s = en if lang() == "en" else es
+    return s.format(**kw) if kw else s
+
+
+def title() -> str:
+    return tr("title")
+
+
+def _num(v: float, d: int = 0) -> str:
+    """Número con separador de miles según el idioma."""
+    s = f"{v:,.{d}f}"
+    if lang() == "en":
+        return s
+    return s.replace(",", " ").replace(".", ",").replace(" ", ".")
+
 
 # ---------------------------------------------------------------------------
 # Perfiles laminados (h, b, tw, tf en mm; peso en kg/m) — series europeas
@@ -99,14 +355,16 @@ for _serie, _tabla in (("IPE", _IPE), ("HEA", _HEA), ("HEB", _HEB)):
         PROFILES[f"{_serie} {_n}"] = (_h / 1000, _b / 1000, _tw / 1000, _tf / 1000, _kg)
 PROFILE_NAMES = list(PROFILES)
 
-PURLIN_TYPES = [("C", "C conformada"), ("Z", "Z conformada"), ("IPE", "IPE laminado")]
+PURLIN_TYPES = ["C", "Z", "IPE"]
+BRACED_BAYS = ["extremos", "todos"]
 
 DEFAULTS = {
     # Geometría
-    "luz": 16.0, "alero": 8.0, "pendiente": 10.0,       # pendiente en %
+    "luz": 16.0, "alero": 8.0, "alero_der": 8.0, "pendiente": 10.0,   # pendiente en %
     "n_porticos": 5, "separacion": 5.0,
     # Pilares y dinteles
     "pilar": "HEA 300", "dintel": "IPE 360",
+    "dintel_ext_on": False, "dintel_ext": "IPE 300",
     # Cartelas (0 = sin cartela)
     "cart_alero_l": 1.60, "cart_alero_h": 0.36,
     "cart_cumb_l": 0.80, "cart_cumb_h": 0.20,
@@ -120,13 +378,23 @@ DEFAULTS = {
     # Puente grúa
     "grua": True, "mensula": "HEA 200", "mensula_z": 6.60, "mensula_vuelo": 0.40,
     "viga_carril": "HEB 240",
+    # Arriostramiento (cruces de San Andrés en redondo)
+    "arr_cub": True, "arr_fach": True, "arr_vanos": "extremos",
+    "arr_recuadros": 3, "arr_fach_n": 1, "arr_d": 0.020,
 }
 
-LAYERS = {"est": "Estructura", "cor": "Correas", "can": "Canalones", "pg": "Puente grúa"}
-MATS = {"est": ("Acero estructural", (0.36, 0.42, 0.50)),
-        "cor": ("Acero correas", (0.72, 0.62, 0.30)),
-        "can": ("Chapa canalón", (0.80, 0.80, 0.82)),
-        "pg": ("Acero puente grúa", (0.80, 0.45, 0.15))}
+# Valores que se aplican a naves guardadas con versiones anteriores, para que
+# al editarlas o medirlas no aparezcan piezas que no tenían.
+LEGACY = {"arr_cub": False, "arr_fach": False}
+
+LAYER_KEYS = ("est", "cor", "can", "pg", "arr")
+MAT_RGB = {"est": (0.36, 0.42, 0.50), "cor": (0.72, 0.62, 0.30),
+           "can": (0.80, 0.80, 0.82), "pg": (0.80, 0.45, 0.15),
+           "arr": (0.25, 0.55, 0.35)}
+
+
+def layer_name(k: str) -> str:
+    return tr("ly_" + k)
 
 
 class NaveError(Exception):
@@ -137,9 +405,17 @@ class NaveError(Exception):
 # Parámetros
 # ---------------------------------------------------------------------------
 
-def normalize(params) -> dict:
+def normalize(params, legacy: bool = True) -> dict:
+    """Parámetros completos y saneados. Con ``legacy`` (parámetros guardados
+    en una nave), las claves ausentes toman los valores de ``LEGACY``."""
+    src = dict(params or {})
     p = dict(DEFAULTS)
-    p.update({k: v for k, v in (params or {}).items() if k in DEFAULTS})
+    if src:
+        if legacy:
+            p.update(LEGACY)
+        # Versión 1.0: un único alero.
+        p["alero_der"] = src.get("alero", DEFAULTS["alero"])
+    p.update({k: v for k, v in src.items() if k in DEFAULTS})
     for k, v in DEFAULTS.items():
         if isinstance(v, bool):
             p[k] = bool(p[k])
@@ -147,55 +423,41 @@ def normalize(params) -> dict:
             p[k] = int(p[k])
         elif isinstance(v, float):
             p[k] = float(p[k])
-    for k in ("pilar", "dintel", "correa_ipe", "mensula", "viga_carril"):
+    for k in ("pilar", "dintel", "dintel_ext", "correa_ipe", "mensula", "viga_carril"):
         if p[k] not in PROFILES:
             p[k] = DEFAULTS[k]
-    if p["correa_tipo"] not in {c for c, _ in PURLIN_TYPES}:
+    if p["correa_tipo"] not in PURLIN_TYPES:
         p["correa_tipo"] = "C"
+    if p["arr_vanos"] not in BRACED_BAYS:
+        p["arr_vanos"] = DEFAULTS["arr_vanos"]
     return p
 
 
-class Geo:
-    """Magnitudes derivadas de los parámetros (todas en metros)."""
+class Side:
+    """Un faldón y su fachada, en coordenadas propias: x desde la cara
+    exterior del pilar de esa fachada hacia la cumbrera."""
 
-    def __init__(self, p: dict) -> None:
-        self.p = p
-        if p["luz"] <= 0 or p["alero"] <= 0:
-            raise NaveError("La luz y la altura de alero deben ser positivas.")
-        if p["n_porticos"] < 1:
-            raise NaveError("Debe haber al menos un pórtico.")
-        if p["n_porticos"] > 1 and p["separacion"] <= 0:
-            raise NaveError("La separación entre pórticos debe ser positiva.")
-        if not 0.0 <= p["pendiente"] < 100.0:
-            raise NaveError("La pendiente debe estar entre 0 % y 100 %.")
-        self.L = p["luz"]
-        self.H = p["alero"]
-        self.t = p["pendiente"] / 100.0
-        self.a = math.atan(self.t)
-        self.ca, self.sa = math.cos(self.a), math.sin(self.a)
-        self.hp, self.bp, self.twp, self.tfp, self.kgp = PROFILES[p["pilar"]]
-        self.hd, self.bd, self.twd, self.tfd, self.kgd = PROFILES[p["dintel"]]
-        self.n = p["n_porticos"]
-        self.s = p["separacion"] if self.n > 1 else 0.0
-        self.Ln = (self.n - 1) * self.s
-        self.hv = self.hd / self.ca          # canto del dintel en vertical
-        if 2 * self.hp >= self.L:
-            raise NaveError("Los pilares no caben en la luz indicada.")
-        if self.H - self.hv - self.hp * self.t <= 0.5:
-            raise NaveError("La altura de alero es insuficiente para el dintel elegido.")
-        # Cabeza de pilar: cara inferior del dintel en la cara interior del pilar.
-        self.Hp = self.z_under(self.hp)
-        self.Lslope = (self.L / 2) / self.ca
+    def __init__(self, geo: "Geo", H: float, xs: float, rafter: str) -> None:
+        self.p = geo.p
+        self.t = geo.t
+        self.hp = geo.hp
+        self.H = H                       # altura de alero
+        self.xs = xs                     # distancia horizontal a la cumbrera
+        self.rafter = rafter
+        self.hd, self.bd, self.twd, self.tfd, self.kgd = PROFILES[rafter]
+        self.hv = self.hd / geo.ca       # canto del dintel en vertical
+        self.Hp = self.z_under(geo.hp)   # longitud del pilar
+        self.Lslope = xs / geo.ca        # longitud del faldón
 
     def z_top(self, x: float) -> float:
-        """Cota de la cara superior del dintel izquierdo en la abscisa x."""
+        """Cota de la cara superior del dintel en la abscisa x."""
         return self.H + x * self.t
 
     def z_under(self, x: float) -> float:
         return self.H - self.hv + x * self.t
 
     def z_under_cartela(self, x: float) -> float:
-        """Cota inferior del conjunto dintel + cartela de alero en x (lado izq.)."""
+        """Cota inferior del conjunto dintel + cartela de alero en x."""
         p = self.p
         z = self.z_under(x)
         Lc, hc = p["cart_alero_l"], p["cart_alero_h"]
@@ -203,6 +465,73 @@ class Geo:
         if Lc > 0 and hc > 0 and x0 <= x <= x0 + Lc:
             z -= hc * (1 - (x - x0) / Lc)
         return z
+
+
+class Geo:
+    """Magnitudes derivadas de los parámetros (todas en metros)."""
+
+    def __init__(self, p: dict) -> None:
+        self.p = p
+        if p["luz"] <= 0 or p["alero"] <= 0 or p["alero_der"] <= 0:
+            raise NaveError(tr("e_pos"))
+        if p["n_porticos"] < 1:
+            raise NaveError(tr("e_n"))
+        if p["n_porticos"] > 1 and p["separacion"] <= 0:
+            raise NaveError(tr("e_sep"))
+        if not 0.0 <= p["pendiente"] < 100.0:
+            raise NaveError(tr("e_slope"))
+        self.L = p["luz"]
+        self.Hl, self.Hr = p["alero"], p["alero_der"]
+        self.t = p["pendiente"] / 100.0
+        self.a = math.atan(self.t)
+        self.ca, self.sa = math.cos(self.a), math.sin(self.a)
+        self.hp, self.bp, self.twp, self.tfp, self.kgp = PROFILES[p["pilar"]]
+        self.n = p["n_porticos"]
+        self.s = p["separacion"] if self.n > 1 else 0.0
+        self.Ln = (self.n - 1) * self.s
+        if 2 * self.hp >= self.L:
+            raise NaveError(tr("e_cols"))
+        # Cumbrera: misma pendiente en ambos faldones.
+        dH = self.Hr - self.Hl
+        if self.t == 0.0:
+            if abs(dH) > 1e-9:
+                raise NaveError(tr("e_flat"))
+            self.xr = self.L / 2
+        else:
+            self.xr = (self.L + dH / self.t) / 2
+        if not self.hp < self.xr < self.L - self.hp:
+            tmin = abs(dH) / (self.L - 2 * self.hp) * 100
+            raise NaveError(tr("e_ridge", hl=self.Hl, hr=self.Hr, tmin=tmin))
+        self.zr = self.Hl + self.xr * self.t           # cota de cumbrera (cara superior)
+        # Dinteles por tipo de pórtico.
+        self.rafter = {"int": p["dintel"],
+                       "ext": p["dintel_ext"] if p["dintel_ext_on"] else p["dintel"]}
+        self.sides = {}
+        for kind, raf in self.rafter.items():
+            for sd, H, xs in (("l", self.Hl, self.xr), ("r", self.Hr, self.L - self.xr)):
+                side = Side(self, H, xs, raf)
+                if H - side.hv - self.hp * self.t <= 0.5:
+                    raise NaveError(tr("e_low", side=tr("side_" + sd)))
+                self.sides[kind, sd] = side
+        if (p["arr_cub"] or p["arr_fach"]) and (
+                p["arr_d"] <= 0 or p["arr_recuadros"] < 1 or p["arr_fach_n"] < 1):
+            raise NaveError(tr("e_brace"))
+
+    # --- Pórticos -------------------------------------------------------
+
+    def kind(self, i: int) -> str:
+        """Tipo de pórtico i (0 … n−1): «ext» para el primero y el último."""
+        if self.p["dintel_ext_on"] and i in (0, self.n - 1):
+            return "ext"
+        return "int"
+
+    def kinds_used(self) -> list[str]:
+        return sorted({self.kind(i) for i in range(self.n)})
+
+    def side(self, sd: str, kind: str = "int") -> Side:
+        return self.sides[kind, sd]
+
+    # --- Correas --------------------------------------------------------
 
     def purlin_section(self) -> tuple:
         """(polígono (u, w), peso kg/m, canto) de la correa; w = 0 apoyo."""
@@ -213,22 +542,24 @@ class Geo:
             return poly, kg, h
         h, b, e, c = p["correa_h"], p["correa_b"], p["correa_e"], p["correa_c"]
         if min(h, b, e) <= 0 or 2 * e >= min(h, b) or c < 0 or c >= h / 2:
-            raise NaveError("Dimensiones de correa incoherentes.")
+            raise NaveError(tr("e_purlin"))
         poly = c_section(h, b, e, c) if p["correa_tipo"] == "C" else z_section(h, b, e, c)
         return poly, polygon_area(poly) * STEEL, h
 
-    def purlin_positions(self) -> list[float]:
+    def purlin_positions(self, sd: str = "l") -> list[float]:
         """Distancias, medidas sobre el faldón desde el alero, de cada correa."""
         p = self.p
         a0 = max(0.0, p["correa_d_alero"])
-        a1 = self.Lslope - max(0.0, p["correa_d_cumbrera"])
+        a1 = self.side(sd).Lslope - max(0.0, p["correa_d_cumbrera"])
         if a1 <= a0:
             return [a0]
         smax = p["correa_sep"]
         if smax <= 0:
-            raise NaveError("La separación máxima de correas debe ser positiva.")
+            raise NaveError(tr("e_purlin_sep"))
         k = max(1, math.ceil((a1 - a0) / smax - 1e-9))
         return [a0 + i * (a1 - a0) / k for i in range(k + 1)]
+
+    # --- Puente grúa ----------------------------------------------------
 
     def crane_check(self) -> list[str]:
         """Avisos de interferencia del puente grúa con dintel y cartela."""
@@ -240,17 +571,63 @@ class Geo:
         hvc, bvc = PROFILES[p["viga_carril"]][:2]
         x = self.hp + p["mensula_vuelo"]
         top_vc = p["mensula_z"] + hvc
-        free = min(self.z_under_cartela(x - bvc / 2), self.z_under_cartela(x + bvc / 2))
-        if top_vc > free - 1e-6:
-            out.append(f"La viga carril (cara superior a {top_vc:.3f} m) interfiere con el "
-                       f"dintel o la cartela (cara inferior a {free:.3f} m en su vertical).")
+        asym = abs(self.Hl - self.Hr) > 1e-9
+        kinds = self.kinds_used()
+
+        def where(sd, kind=None):
+            parts = ([tr("side_" + sd)] if asym else []) + (
+                [tr("kind_" + kind)] if kind and len(kinds) > 1 else [])
+            return f" ({', '.join(parts)})" if parts else ""
+        for sd in ("l", "r"):
+            for kind in kinds:
+                side = self.side(sd, kind)
+                free = min(side.z_under_cartela(x - bvc / 2), side.z_under_cartela(x + bvc / 2))
+                if top_vc > free - 1e-6:
+                    out.append(tr("c_clash", top=top_vc, free=free, where=where(sd, kind)))
+            if x + bvc / 2 >= self.side(sd).xs:
+                out.append(tr("c_ridge", where=where(sd)))
         if p["mensula_z"] - hm <= 0:
-            out.append("La ménsula queda por debajo del arranque del pilar.")
+            out.append(tr("c_low"))
         if p["mensula_vuelo"] <= bvc / 2:
-            out.append("El vuelo de la ménsula es menor que la semianchura de la viga carril.")
-        if x + bvc / 2 >= self.L / 2:
-            out.append("La viga carril sobrepasa el eje de la nave.")
-        return out
+            out.append(tr("c_vuelo"))
+        seen, uniq = set(), []
+        for m in out:
+            if m not in seen:
+                seen.add(m)
+                uniq.append(m)
+        return uniq
+
+    def notes(self) -> list[str]:
+        """Avisos informativos (no bloquean)."""
+        p = self.p
+        if (p["arr_cub"] or p["arr_fach"]) and self.n < 2:
+            return [tr("c_info_brace")]
+        return []
+
+    # --- Arriostramiento -------------------------------------------------
+
+    def braced_bays(self) -> list[int]:
+        """Índices de vano (0 … n−2) con cruces de San Andrés."""
+        if self.n < 2 or not (self.p["arr_cub"] or self.p["arr_fach"]):
+            return []
+        if self.p["arr_vanos"] == "todos":
+            return list(range(self.n - 1))
+        return sorted({0, self.n - 2})
+
+    def roof_brace_dz(self) -> float:
+        """Distancia del plano de cruces de cubierta bajo la cara superior del dintel."""
+        return min(PROFILES[r][0] for r in self.rafter.values()) / 4
+
+    def roof_brace_nodes(self, sd: str) -> list[float]:
+        """Abscisas (coordenadas del faldón) de los nudos de las cruces de cubierta."""
+        side = self.side(sd)
+        k = self.p["arr_recuadros"]
+        x0 = self.hp / 2
+        return [x0 + j * (side.xs - x0) / k for j in range(k + 1)]
+
+    def wall_brace_top(self, sd: str) -> float:
+        """Cabeza de las cruces de fachada: el pilar más corto de ese lado."""
+        return min(self.side(sd, kind).Hp for kind in self.kinds_used())
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +677,10 @@ def polygon_area(poly) -> float:
     return abs(s) / 2
 
 
+def rod_kgm(d: float) -> float:
+    return math.pi * d * d / 4 * STEEL
+
+
 # ---------------------------------------------------------------------------
 # Mallas
 # ---------------------------------------------------------------------------
@@ -334,6 +715,27 @@ def prism(mesh, cap, ext, attrs) -> None:
     for i in range(k):
         a, b = cap[i], cap[(i + 1) % k]
         _add_face(mesh, [a, b, top[(i + 1) % k], top[i]], attrs)
+
+
+def rod(mesh, p, q, d, attrs, sides=8) -> None:
+    """Redondo de diámetro d entre los puntos p y q (prisma de ``sides`` caras)."""
+    v = (q[0] - p[0], q[1] - p[1], q[2] - p[2])
+    ln = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
+    if ln <= 1e-9:
+        return
+    e = (v[0] / ln, v[1] / ln, v[2] / ln)
+    ref = (0.0, 0.0, 1.0) if abs(e[2]) < 0.9 else (1.0, 0.0, 0.0)
+    u = (e[1] * ref[2] - e[2] * ref[1], e[2] * ref[0] - e[0] * ref[2],
+         e[0] * ref[1] - e[1] * ref[0])
+    lu = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
+    u = (u[0] / lu, u[1] / lu, u[2] / lu)
+    w = (e[1] * u[2] - e[2] * u[1], e[2] * u[0] - e[0] * u[2], e[0] * u[1] - e[1] * u[0])
+    r = d / 2
+    cap = []
+    for i in range(sides):
+        c, s = math.cos(2 * math.pi * i / sides), math.sin(2 * math.pi * i / sides)
+        cap.append(tuple(p[j] + r * (c * u[j] + s * w[j]) for j in range(3)))
+    prism(mesh, cap, v, attrs)
 
 
 def _mesh():
@@ -383,9 +785,9 @@ def _rot_about_center(cx, cy) -> QMatrix4x4:
 
 def _paint(scene, key) -> dict:
     from core.materials import Material
-    name, rgb = MATS[key]
+    name = tr("mt_" + key)
     if name not in scene.materials:
-        scene.materials[name] = Material(name, color=rgb)
+        scene.materials[name] = Material(name, color=MAT_RGB[key])
     return scene.materials[name].face_attrs()
 
 
@@ -393,8 +795,8 @@ def _ensure_layers(scene, keys) -> None:
     from core.layers import Layer
     have = {ly.name for ly in scene.layers}
     for k in keys:
-        if LAYERS[k] not in have:
-            scene.layers.append(Layer(LAYERS[k]))
+        if layer_name(k) not in have:
+            scene.layers.append(Layer(layer_name(k)))
 
 
 def _haunch(mesh, web_pts_xz, tw, b, tf, under_a, under_b, attrs):
@@ -406,125 +808,258 @@ def _haunch(mesh, web_pts_xz, tw, b, tf, under_a, under_b, attrs):
     prism(mesh, [(x, -b / 2, z) for x, z in flange], (0, b, 0), attrs)
 
 
-def build_nave(scene, params) -> list:
-    """Hijos del contenedor de la nave, en coordenadas locales de la nave."""
-    p = normalize(params)
-    g = Geo(p)
-    est = _paint(scene, "est")
-    lay_est = LAYERS["est"]
-    L, t = g.L, g.t
-    R = _rot_about_center(L / 2, g.Ln / 2)
-    R0 = _rot_about_center(L / 2, 0.0)        # dentro de la definición del pórtico
+class _Builder:
+    """Construye las piezas reutilizando mallas iguales (componentes)."""
 
-    # --- Pilar: doble T, canto según X (plano del pórtico), de z = 0 a Hp
-    m_pil = _mesh()
-    prism(m_pil, [(w, u, 0.0) for u, w in i_section(g.hp, g.bp, g.twp, g.tfp)],
-          (0, 0, g.Hp), est)
-    pil_l = _group(m_pil, "Pilar izquierdo", _T(g.hp / 2), layer=lay_est, ifc="IfcColumn")
-    pil_r = _group(m_pil, "Pilar derecho", _T(L - g.hp / 2), layer=lay_est, ifc="IfcColumn")
+    def __init__(self, scene, p: dict) -> None:
+        self.scene = scene
+        self.p = p
+        self.g = Geo(p)
+        self.est = _paint(scene, "est")
+        self.ly_est = layer_name("est")
+        self.R = _rot_about_center(self.g.L / 2, self.g.Ln / 2)   # piezas longitudinales
+        self.R0 = _rot_about_center(self.g.L / 2, 0.0)            # dentro del pórtico
+        self._cache: dict = {}
 
-    # --- Dintel izquierdo: corte a plomo en x = 0 y en la cumbrera
-    zc = g.H - g.hv / 2                    # eje del dintel en x = 0
-    m_din = _mesh()
-    prism(m_din, [(0.0, u, zc + w / g.ca) for u, w in i_section(g.hd, g.bd, g.twd, g.tfd)],
-          (L / 2, 0, (L / 2) * t), est)
-    din_l = _group(m_din, "Dintel izquierdo", None, layer=lay_est, ifc="IfcBeam")
-    din_r = _group(m_din, "Dintel derecho", R0, layer=lay_est, ifc="IfcBeam")
-    parts = [pil_l, pil_r, din_l, din_r]
+    def cached(self, key, make):
+        if key not in self._cache:
+            self._cache[key] = make()
+        return self._cache[key]
 
-    # --- Cartela de alero (bajo el dintel, junto a la cara interior del pilar)
-    Lc, hc = p["cart_alero_l"], p["cart_alero_h"]
-    if Lc > 0 and hc > 0:
-        x0, x1 = g.hp, g.hp + Lc
-        A = (x0, g.z_under(x0) - hc)
-        B = (x1, g.z_under(x1))
-        m_ca = _mesh()
-        _haunch(m_ca, [(x0, g.z_under(x0)), B, A], g.twd, g.bd, g.tfd, A, B, est)
-        parts += [_group(m_ca, "Cartela de alero izquierda", None, layer=lay_est, ifc="IfcMember"),
-                  _group(m_ca, "Cartela de alero derecha", R0, layer=lay_est, ifc="IfcMember")]
+    # --- Piezas del pórtico (coordenadas del faldón; derecha con R0) ----
 
-    # --- Cartela de cumbrera (una pieza bajo los dos dinteles)
-    Lk, hk = p["cart_cumb_l"], p["cart_cumb_h"]
-    if Lk > 0 and hk > 0:
-        xm = L / 2
-        zr = g.z_under(xm)
-        P0 = (xm - Lk, g.z_under(xm - Lk))
-        Pb = (xm, zr - hk)
-        P1 = (xm + Lk, g.z_under(xm - Lk))
-        m_ck = _mesh()
-        prism(m_ck, [(x, -g.twd / 2, z) for x, z in [P0, (xm, zr), P1, Pb]], (0, g.twd, 0), est)
-        for a, b in ((P0, Pb), (Pb, P1)):
-            (xa, za), (xb, zb) = a, b
-            prism(m_ck, [(x, -g.bd / 2, z) for x, z in
-                         [(xa, za), (xb, zb), (xb, zb - g.tfd), (xa, za - g.tfd)]],
-                  (0, g.bd, 0), est)
-        parts.append(_group(m_ck, "Cartela de cumbrera", None, layer=lay_est, ifc="IfcMember"))
+    def column_mesh(self, Hp):
+        g = self.g
 
-    # --- Ménsulas del puente grúa (forman parte del pórtico)
-    if p["grua"]:
-        hm, bm, twm, tfm, _kg = PROFILES[p["mensula"]]
-        bvc = PROFILES[p["viga_carril"]][1]
-        Lm = p["mensula_vuelo"] + bvc / 2
-        zm = p["mensula_z"] - hm / 2
-        m_me = _mesh()
-        prism(m_me, [(g.hp, u, zm + w) for u, w in i_section(hm, bm, twm, tfm)], (Lm, 0, 0),
-              _paint(scene, "pg"))
-        parts += [_group(m_me, "Ménsula izquierda", None, layer=LAYERS["pg"], ifc="IfcMember"),
-                  _group(m_me, "Ménsula derecha", R0, layer=LAYERS["pg"], ifc="IfcMember")]
+        def make():
+            m = _mesh()
+            prism(m, [(w, u, 0.0) for u, w in i_section(g.hp, g.bp, g.twp, g.tfp)],
+                  (0, 0, Hp), self.est)
+            return m
+        return self.cached(("col", round(Hp, 6)), make)
 
-    # --- Pórticos: una definición y n instancias
-    from core.group import Group, copy_group
-    porticos = []
-    first = Group(name="Pórtico 1")
-    first.adopt(parts)
-    first.component = True
-    first.layer = lay_est
-    porticos.append(first)
-    for i in range(1, g.n):
-        c = copy_group(first, delta=QVector3D(0, i * g.s, 0))
-        c.name = f"Pórtico {i + 1}"
-        porticos.append(c)
-    out = list(porticos)
+    def rafter_mesh(self, side: Side):
+        def make():
+            zc = side.H - side.hv / 2
+            m = _mesh()
+            prism(m, [(0.0, u, zc + w / self.g.ca)
+                      for u, w in i_section(side.hd, side.bd, side.twd, side.tfd)],
+                  (side.xs, 0, side.xs * side.t), self.est)
+            return m
+        return self.cached(("raf", round(side.H, 6), round(side.xs, 6), side.rafter), make)
 
-    # --- Correas
-    poly, _kg, _h = g.purlin_section()
-    v = p["correa_vuelo"]
-    Lco = g.Ln + 2 * v
-    if Lco > 0:
+    def eaves_haunch_mesh(self, side: Side):
+        p, g = self.p, self.g
+
+        def make():
+            Lc, hc = p["cart_alero_l"], p["cart_alero_h"]
+            x0, x1 = g.hp, g.hp + Lc
+            A = (x0, side.z_under(x0) - hc)
+            B = (x1, side.z_under(x1))
+            m = _mesh()
+            _haunch(m, [(x0, side.z_under(x0)), B, A], side.twd, side.bd, side.tfd, A, B,
+                    self.est)
+            return m
+        return self.cached(("ca", round(side.H, 6), side.rafter), make)
+
+    def ridge_haunch_mesh(self, kind):
+        p, g = self.p, self.g
+        side = g.side("l", kind)
+
+        def make():
+            Lk, hk = p["cart_cumb_l"], p["cart_cumb_h"]
+            xm = g.xr
+            zr = side.z_under(xm)
+            zs = side.z_under(xm - Lk)
+            P0, Pb, P1 = (xm - Lk, zs), (xm, zr - hk), (xm + Lk, zs)
+            m = _mesh()
+            prism(m, [(x, -side.twd / 2, z) for x, z in [P0, (xm, zr), P1, Pb]],
+                  (0, side.twd, 0), self.est)
+            for a, b in ((P0, Pb), (Pb, P1)):
+                (xa, za), (xb, zb) = a, b
+                prism(m, [(x, -side.bd / 2, z) for x, z in
+                          [(xa, za), (xb, zb), (xb, zb - side.tfd), (xa, za - side.tfd)]],
+                      (0, side.bd, 0), self.est)
+            return m
+        return self.cached(("ck", side.rafter), make)
+
+    def bracket_mesh(self):
+        p, g = self.p, self.g
+
+        def make():
+            hm, bm, twm, tfm, _kg = PROFILES[p["mensula"]]
+            bvc = PROFILES[p["viga_carril"]][1]
+            Lm = p["mensula_vuelo"] + bvc / 2
+            zm = p["mensula_z"] - hm / 2
+            m = _mesh()
+            prism(m, [(g.hp, u, zm + w) for u, w in i_section(hm, bm, twm, tfm)], (Lm, 0, 0),
+                  _paint(self.scene, "pg"))
+            return m
+        return self.cached("me", make)
+
+    def frame_parts(self, kind) -> list:
+        p, g = self.p, self.g
+        L = g.L
+        sl, sr = g.side("l", kind), g.side("r", kind)
+        parts = [
+            _group(self.column_mesh(sl.Hp), tr("n_col_l"), _T(g.hp / 2),
+                   layer=self.ly_est, ifc="IfcColumn"),
+            _group(self.column_mesh(sr.Hp), tr("n_col_r"), _T(L - g.hp / 2),
+                   layer=self.ly_est, ifc="IfcColumn"),
+            _group(self.rafter_mesh(sl), tr("n_raf_l"), None, layer=self.ly_est, ifc="IfcBeam"),
+            _group(self.rafter_mesh(sr), tr("n_raf_r"), self.R0, layer=self.ly_est,
+                   ifc="IfcBeam"),
+        ]
+        if p["cart_alero_l"] > 0 and p["cart_alero_h"] > 0:
+            parts += [_group(self.eaves_haunch_mesh(sl), tr("n_ca_l"), None, layer=self.ly_est,
+                             ifc="IfcMember"),
+                      _group(self.eaves_haunch_mesh(sr), tr("n_ca_r"), self.R0,
+                             layer=self.ly_est, ifc="IfcMember")]
+        if p["cart_cumb_l"] > 0 and p["cart_cumb_h"] > 0:
+            parts.append(_group(self.ridge_haunch_mesh(kind), tr("n_ck"), None,
+                                layer=self.ly_est, ifc="IfcMember"))
+        if p["grua"]:
+            ly = layer_name("pg")
+            parts += [_group(self.bracket_mesh(), tr("n_me_l"), None, layer=ly, ifc="IfcMember"),
+                      _group(self.bracket_mesh(), tr("n_me_r"), self.R0, layer=ly,
+                             ifc="IfcMember")]
+        return parts
+
+    # --- Pórticos --------------------------------------------------------
+
+    def frames(self) -> list:
+        """Pórticos 1 … n: una definición para los interiores y otra para los
+        extremos (si su dintel es distinto); el resto son copias."""
+        from core.group import Group, copy_group
+        g = self.g
+        defs: dict = {}
+        out = []
+        for i in range(g.n):
+            kind = g.kind(i)
+            if kind not in defs:
+                first = Group(name=tr("n_frame", i=i + 1))
+                first.adopt(self.frame_parts(kind))
+                first.component = True
+                first.layer = self.ly_est
+                if i:
+                    first.xform = _T(0, i * g.s, 0)
+                defs[kind] = (first, i)
+                out.append(first)
+            else:
+                src, i0 = defs[kind]
+                c = copy_group(src, delta=QVector3D(0, (i - i0) * g.s, 0))
+                c.name = tr("n_frame", i=i + 1)
+                out.append(c)
+        return out
+
+    # --- Correas, canalones, vigas carril --------------------------------
+
+    def purlins(self) -> list:
+        p, g = self.p, self.g
+        poly, _kg, _h = g.purlin_section()
+        v = p["correa_vuelo"]
+        Lco = g.Ln + 2 * v
+        if Lco <= 0:
+            return []
         m_co = _mesh()
-        prism(m_co, [(u, -v, w) for u, w in poly], (0, Lco, 0), _paint(scene, "cor"))
+        prism(m_co, [(u, -v, w) for u, w in poly], (0, Lco, 0), _paint(self.scene, "cor"))
+        ly = layer_name("cor")
         inst = []
-        for k, a in enumerate(g.purlin_positions(), 1):
-            M = _T(a * g.ca, 0, g.H + a * g.sa)
-            M.rotate(-math.degrees(g.a), 0, 1, 0)
-            inst.append(_group(m_co, f"Correa I-{k}", M, layer=LAYERS["cor"], ifc="IfcMember"))
-            inst.append(_group(m_co, f"Correa D-{k}", R * M, layer=LAYERS["cor"], ifc="IfcMember"))
-        out.append(_container("Correas", inst, LAYERS["cor"]))
+        for sd, name, R in (("l", "n_cor_l", None), ("r", "n_cor_r", self.R)):
+            H = g.side(sd).H
+            for k, a in enumerate(g.purlin_positions(sd), 1):
+                M = _T(a * g.ca, 0, H + a * g.sa)
+                M.rotate(-math.degrees(g.a), 0, 1, 0)
+                inst.append(_group(m_co, tr(name, k=k), M if R is None else R * M,
+                                   layer=ly, ifc="IfcMember"))
+        return [_container(tr("n_cor"), inst, ly)]
 
-    # --- Canalones (exteriores, boca arriba, borde superior a cota de alero)
-    if p["canalon"] and Lco > 0:
+    def gutters(self) -> list:
+        p, g = self.p, self.g
+        v = p["correa_vuelo"]
+        Lco = g.Ln + 2 * v
+        if not p["canalon"] or Lco <= 0:
+            return []
         a, h, e = p["canalon_a"], p["canalon_h"], p["canalon_e"]
         if min(a, h, e) <= 0 or 2 * e >= min(a, h):
-            raise NaveError("Dimensiones de canalón incoherentes.")
+            raise NaveError(tr("e_gutter"))
         m_cn = _mesh()
-        prism(m_cn, [(-a + u, -v, g.H - h + w) for u, w in u_section(a, h, e)], (0, Lco, 0),
-              _paint(scene, "can"))
-        out.append(_container("Canalones", [
-            _group(m_cn, "Canalón izquierdo", None, layer=LAYERS["can"]),
-            _group(m_cn, "Canalón derecho", R, layer=LAYERS["can"])], LAYERS["can"]))
+        prism(m_cn, [(-a + u, -v, -h + w) for u, w in u_section(a, h, e)], (0, Lco, 0),
+              _paint(self.scene, "can"))
+        ly = layer_name("can")
+        return [_container(tr("n_can"), [
+            _group(m_cn, tr("n_can_l"), _T(0, 0, g.Hl), layer=ly),
+            _group(m_cn, tr("n_can_r"), self.R * _T(0, 0, g.Hr), layer=ly)], ly)]
 
-    # --- Vigas carril
-    if p["grua"] and g.Ln > 0:
+    def runway(self) -> list:
+        p, g = self.p, self.g
+        if not p["grua"] or g.Ln <= 0:
+            return []
         hvc, bvc, twv, tfv, _kg = PROFILES[p["viga_carril"]]
         xv = g.hp + p["mensula_vuelo"]
         m_vc = _mesh()
         prism(m_vc, [(xv + u, 0.0, p["mensula_z"] + hvc / 2 + w)
-                     for u, w in i_section(hvc, bvc, twv, tfv)], (0, g.Ln, 0), _paint(scene, "pg"))
-        out.append(_container("Puente grúa", [
-            _group(m_vc, "Viga carril izquierda", None, layer=LAYERS["pg"], ifc="IfcBeam"),
-            _group(m_vc, "Viga carril derecha", R, layer=LAYERS["pg"], ifc="IfcBeam")],
-            LAYERS["pg"]))
+                     for u, w in i_section(hvc, bvc, twv, tfv)], (0, g.Ln, 0),
+              _paint(self.scene, "pg"))
+        ly = layer_name("pg")
+        return [_container(tr("n_pg"), [
+            _group(m_vc, tr("n_vc_l"), None, layer=ly, ifc="IfcBeam"),
+            _group(m_vc, tr("n_vc_r"), self.R, layer=ly, ifc="IfcBeam")], ly)]
+
+    # --- Cruces de San Andrés -------------------------------------------
+
+    def bracing(self) -> list:
+        p, g = self.p, self.g
+        bays = g.braced_bays()
+        if not bays:
+            return []
+        d = p["arr_d"]
+        attrs = _paint(self.scene, "arr")
+        ly = layer_name("arr")
+        s, L = g.s, g.L
+
+        def gx(sd, x):          # abscisa del faldón → abscisa de la nave
+            return x if sd == "l" else L - x
+
+        def cross(m, a, b):     # cruz entre los puntos (x, z) a y b, de y = 0 a y = s
+            (xa, za), (xb, zb) = a, b
+            rod(m, (xa, 0.0, za), (xb, s, zb), d, attrs)
+            rod(m, (xb, 0.0, zb), (xa, s, za), d, attrs)
+
+        inst = []
+        for sd in ("l", "r"):
+            side = g.side(sd)
+            if p["arr_cub"]:
+                m = _mesh()
+                dz = g.roof_brace_dz()
+                xs = g.roof_brace_nodes(sd)
+                for x0, x1 in zip(xs, xs[1:]):
+                    cross(m, (gx(sd, x0), side.z_top(x0) - dz), (gx(sd, x1), side.z_top(x1) - dz))
+                for j in bays:
+                    inst.append(_group(m, tr("n_acub_" + sd, j=j + 1), _T(0, j * s, 0),
+                                       layer=ly, ifc="IfcMember"))
+            if p["arr_fach"]:
+                m = _mesh()
+                x = gx(sd, g.hp / 2)
+                top = g.wall_brace_top(sd)
+                k = p["arr_fach_n"]
+                zs = [i * top / k for i in range(k + 1)]
+                for z0, z1 in zip(zs, zs[1:]):
+                    cross(m, (x, z0), (x, z1))
+                for j in bays:
+                    inst.append(_group(m, tr("n_afach_" + sd, j=j + 1), _T(0, j * s, 0),
+                                       layer=ly, ifc="IfcMember"))
+        return [_container(tr("n_arr"), inst, ly)]
+
+
+def build_nave(scene, params) -> list:
+    """Hijos del contenedor de la nave, en coordenadas locales de la nave."""
+    p = normalize(params)
+    b = _Builder(scene, p)
+    out = b.frames() + b.purlins() + b.gutters() + b.runway() + b.bracing()
     keys = ["est", "cor"] + (["can"] if p["canalon"] else []) + (["pg"] if p["grua"] else [])
+    if b.g.braced_bays():
+        keys.append("arr")
     _ensure_layers(scene, keys)
     return out
 
@@ -538,36 +1073,85 @@ def measurement(params) -> list[tuple]:
     Pesos nominales de catálogo; cartelas como chapa (alma + ala)."""
     p = normalize(params)
     g = Geo(p)
-    n = g.n
-    rows = [("Pilares", p["pilar"], 2 * n, g.Hp, g.kgp),
-            ("Dinteles", p["dintel"], 2 * n, g.Lslope, g.kgd)]
+    asym = abs(g.Hl - g.Hr) > 1e-9
+    ext_on = p["dintel_ext_on"] and g.rafter["ext"] != g.rafter["int"]
+    count = {k: sum(1 for i in range(g.n) if g.kind(i) == k) for k in ("int", "ext")}
+    rows: list = []
+
+    def label(key, sd=None, kind=None):
+        s = tr(key)
+        extra = []
+        if sd and asym:
+            extra.append(tr("side_" + sd))
+        if kind and ext_on:
+            extra.append(tr("kind_" + kind))
+        return s + (" — " + ", ".join(extra) if extra else "")
+
+    def add(elem, prof, units, length, kgm):
+        if units <= 0:
+            return
+        for i, r in enumerate(rows):
+            if r[0] == elem and r[1] == prof and abs(r[3] - length) < 1e-6 and r[4] == kgm:
+                rows[i] = (elem, prof, r[2] + units, length, kgm)
+                return
+        rows.append((elem, prof, units, length, kgm))
+
+    kinds = g.kinds_used()
+    for kind in kinds:
+        for sd in ("l", "r"):
+            side = g.side(sd, kind)
+            add(label("r_pil", sd, kind), p["pilar"], count[kind], side.Hp, g.kgp)
+    for kind in kinds:
+        for sd in ("l", "r"):
+            side = g.side(sd, kind)
+            add(label("r_din", sd, kind), side.rafter, count[kind], side.Lslope, side.kgd)
     Lc, hc = p["cart_alero_l"], p["cart_alero_h"]
     if Lc > 0 and hc > 0:
-        kg = (Lc * hc / 2 * g.twd + math.hypot(Lc, hc + Lc * g.t) * g.bd * g.tfd) * STEEL
-        rows.append(("Cartelas de alero", f"chapa e={g.twd*1000:.1f}/{g.tfd*1000:.1f} mm",
-                     2 * n, Lc, kg / Lc))
+        for kind in kinds:
+            sd = g.side("l", kind)
+            kg = (Lc * hc / 2 * sd.twd + math.hypot(Lc, hc + Lc * g.t) * sd.bd * sd.tfd) * STEEL
+            add(label("r_ca", None, kind), tr("r_plate", tw=sd.twd * 1000, tf=sd.tfd * 1000),
+                2 * count[kind], Lc, kg / Lc)
     Lk, hk = p["cart_cumb_l"], p["cart_cumb_h"]
     if Lk > 0 and hk > 0:
-        kg = (Lk * hk * g.twd + 2 * math.hypot(Lk, hk - Lk * g.t) * g.bd * g.tfd) * STEEL
-        rows.append(("Cartelas de cumbrera", f"chapa e={g.twd*1000:.1f}/{g.tfd*1000:.1f} mm",
-                     n, 2 * Lk, kg / (2 * Lk)))
+        for kind in kinds:
+            sd = g.side("l", kind)
+            kg = (Lk * hk * sd.twd + 2 * math.hypot(Lk, hk - Lk * g.t) * sd.bd * sd.tfd) * STEEL
+            add(label("r_ck", None, kind), tr("r_plate", tw=sd.twd * 1000, tf=sd.tfd * 1000),
+                count[kind], 2 * Lk, kg / (2 * Lk))
     _poly, kgc, _h = g.purlin_section()
     Lco = g.Ln + 2 * p["correa_vuelo"]
     if Lco > 0:
         name = (p["correa_ipe"] if p["correa_tipo"] == "IPE" else
                 f"{p['correa_tipo']} {p['correa_h']*1000:.0f}×{p['correa_b']*1000:.0f}×"
                 f"{p['correa_e']*1000:.1f}")
-        rows.append(("Correas", name, 2 * len(g.purlin_positions()), Lco, kgc))
+        for sd in ("l", "r"):
+            add(tr("r_cor"), name, len(g.purlin_positions(sd)), Lco, kgc)
     if p["canalon"] and Lco > 0:
         kg = polygon_area(u_section(p["canalon_a"], p["canalon_h"], p["canalon_e"])) * STEEL
-        rows.append(("Canalones", f"U {p['canalon_a']*1000:.0f}×{p['canalon_h']*1000:.0f}×"
-                     f"{p['canalon_e']*1000:.1f}", 2, Lco, kg))
+        add(tr("r_can"), f"U {p['canalon_a']*1000:.0f}×{p['canalon_h']*1000:.0f}×"
+            f"{p['canalon_e']*1000:.1f}", 2, Lco, kg)
     if p["grua"]:
         bvc = PROFILES[p["viga_carril"]][1]
-        rows.append(("Ménsulas", p["mensula"], 2 * n, p["mensula_vuelo"] + bvc / 2,
-                     PROFILES[p["mensula"]][4]))
+        add(tr("r_mens"), p["mensula"], 2 * g.n, p["mensula_vuelo"] + bvc / 2,
+            PROFILES[p["mensula"]][4])
         if g.Ln > 0:
-            rows.append(("Vigas carril", p["viga_carril"], 2, g.Ln, PROFILES[p["viga_carril"]][4]))
+            add(tr("r_vc"), p["viga_carril"], 2, g.Ln, PROFILES[p["viga_carril"]][4])
+    bays = g.braced_bays()
+    if bays:
+        d = p["arr_d"]
+        prof = f"Ø{d*1000:.0f}"
+        kgm = rod_kgm(d)
+        for sd in ("l", "r"):
+            if p["arr_cub"]:
+                xs = g.roof_brace_nodes(sd)
+                dl = (xs[1] - xs[0]) / g.ca
+                add(label("r_acub", sd), prof, 2 * p["arr_recuadros"] * len(bays),
+                    math.hypot(g.s, dl), kgm)
+            if p["arr_fach"]:
+                k = p["arr_fach_n"]
+                add(label("r_afach", sd), prof, 2 * k * len(bays),
+                    math.hypot(g.s, g.wall_brace_top(sd) / k), kgm)
     return [(e, prof, u, l, kgm, u * l * kgm) for e, prof, u, l, kgm in rows]
 
 
@@ -575,9 +1159,9 @@ def summary(params) -> str:
     p = normalize(params)
     g = Geo(p)
     kg = sum(r[5] for r in measurement(p))
-    return (f"Nave {g.L:.2f} × {g.Ln:.2f} m · {g.n} pórticos · "
-            f"{len(g.purlin_positions())} correas por faldón · acero ≈ {kg:,.0f} kg"
-            ).replace(",", ".")
+    kl, kr = len(g.purlin_positions("l")), len(g.purlin_positions("r"))
+    cor = tr("sum_cor", k=kl) if kl == kr else tr("sum_cor2", kl=kl, kr=kr)
+    return tr("sum", L=g.L, Ln=g.Ln, n=g.n, cor=cor, kg=_num(kg))
 
 
 # ---------------------------------------------------------------------------
@@ -592,15 +1176,15 @@ def nave_data(group):
 def _next_name(scene) -> str:
     used = {gr.name for gr in scene.groups}
     i = 1
-    while f"Nave {i}" in used:
+    while f"{tr('nave')} {i}" in used:
         i += 1
-    return f"Nave {i}"
+    return f"{tr('nave')} {i}"
 
 
 def make_nave(scene, params, name=None, xform=None, index=None, layer=None, uid=None):
     """Crea el contenedor de la nave y lo añade al documento."""
     p = normalize(params)
-    children = build_nave(scene, p)          # lanza NaveError antes de tocar nada
+    children = build_nave(scene, p)          # lanza NaveError antes de tocar el documento
     c = _container(name or _next_name(scene), children, layer)
     if xform is not None:
         c.xform = QMatrix4x4(xform)
@@ -615,14 +1199,22 @@ def make_nave(scene, params, name=None, xform=None, index=None, layer=None, uid=
 
 
 def rebuild_nave(scene, group, params):
-    """Sustituye la nave por otra con nuevos parámetros, en el mismo lugar."""
+    """Sustituye la nave por otra con nuevos parámetros, en el mismo lugar.
+    La nave nueva se genera antes de retirar la existente."""
     if nave_data(group) is None:
-        raise NaveError(f"«{group.name}» no es una nave de {TITLE}.")
+        raise NaveError(tr("w_not_nave", name=group.name))
+    p = normalize(params)
+    children = build_nave(scene, p)
     idx = scene.groups.index(group)
     scene.groups.remove(group)
     scene.selection.discard(group)
-    return make_nave(scene, params, name=group.name, xform=group.xform, index=idx,
-                     layer=group.layer, uid=group.uid)
+    c = _container(group.name, children, group.layer)
+    c.xform = QMatrix4x4(group.xform)
+    if group.uid:
+        c.uid = group.uid
+    c.ext = {KEY: {"params": json.loads(json.dumps(p))}}
+    scene.groups.insert(idx, c)
+    return c
 
 
 def _run(viewport, mutate, ok) -> bool:
@@ -651,7 +1243,8 @@ def _selected_naves(scene):
 
 def _last_params(scene) -> dict:
     data = getattr(scene, "plugin_data", None) or {}
-    return normalize((data.get(KEY) or {}).get("last"))
+    last = (data.get(KEY) or {}).get("last")
+    return normalize(last, legacy=False)
 
 
 def _remember(scene, p) -> None:
@@ -663,9 +1256,9 @@ def _remember(scene, p) -> None:
 def nueva(viewport) -> None:
     scene = viewport.scene
     if getattr(scene, "edit_group", None) is not None:
-        _warn(viewport, "Cierre el grupo que está editando y vuelva a ejecutar la orden.")
+        _warn(viewport, tr("w_close_group"))
         return
-    p = NaveDialog.ask(viewport, _last_params(scene), "Nueva nave")
+    p = NaveDialog.ask(viewport, _last_params(scene), lambda: tr("t_new"))
     if p is None:
         return
 
@@ -674,18 +1267,18 @@ def nueva(viewport) -> None:
         c = make_nave(sc, p)
         sc.selection.clear()
         sc.selection.add(c)
-    _run(viewport, mutate, f"{TITLE}: nave creada. " + summary(p))
+    _run(viewport, mutate, f"{title()}: {tr('ok_new')} " + summary(p))
 
 
 def editar(viewport) -> None:
     scene = viewport.scene
     naves = _selected_naves(scene)
     if not naves:
-        _warn(viewport, "Seleccione una nave creada con Pórtico de nave.")
+        _warn(viewport, tr("w_select"))
         return
     nave = naves[0]
     p = NaveDialog.ask(viewport, normalize(nave_data(nave).get("params")),
-                       f"Editar — {nave.name}")
+                       lambda: tr("t_edit", name=nave.name))
     if p is None:
         return
 
@@ -694,14 +1287,14 @@ def editar(viewport) -> None:
         c = rebuild_nave(sc, nave, p)
         sc.selection.clear()
         sc.selection.add(c)
-    _run(viewport, mutate, f"{TITLE}: «{nave.name}» actualizada. " + summary(p))
+    _run(viewport, mutate, f"{title()}: {tr('ok_edit', name=nave.name)} " + summary(p))
 
 
 def medicion(viewport) -> None:
     scene = viewport.scene
     naves = _selected_naves(scene)
     if not naves:
-        _warn(viewport, "Seleccione una nave creada con Pórtico de nave.")
+        _warn(viewport, tr("w_select"))
         return
     MeasureDialog.show_for(viewport, naves[0])
 
@@ -713,34 +1306,54 @@ def medicion(viewport) -> None:
 def _warn(viewport, text) -> None:
     from PySide6.QtWidgets import QMessageBox
     try:
-        viewport.flash_status(f"{TITLE}: " + text.splitlines()[0], 6000)
+        viewport.flash_status(f"{title()}: " + text.splitlines()[0], 6000)
     except Exception:  # noqa: BLE001
         pass
-    QMessageBox.warning(viewport.window(), TITLE, text)
+    QMessageBox.warning(viewport.window(), title(), text)
 
 
 class NaveDialog:
-    """Cuadro de parámetros, por pestañas, con avisos en vivo."""
+    """Cuadro de parámetros, por pestañas, con avisos en vivo. Al cambiar de
+    idioma se vuelve a abrir conservando los valores introducidos."""
 
     @classmethod
-    def ask(cls, viewport, params, title):
+    def ask(cls, viewport, params, title_fn):
+        p = normalize(params)
+        while True:
+            status, p = cls._ask_once(viewport, p, title_fn)
+            if status != "relang":
+                return p if status == "ok" else None
+
+    @classmethod
+    def _ask_once(cls, viewport, p0, title_fn):
         from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                                       QDoubleSpinBox, QFormLayout, QLabel, QSpinBox,
-                                       QTabWidget, QVBoxLayout, QWidget)
-        p0 = normalize(params)
+                                       QDoubleSpinBox, QFormLayout, QLabel, QMessageBox,
+                                       QSpinBox, QTabWidget, QVBoxLayout, QWidget)
         dlg = QDialog(viewport.window())
-        dlg.setWindowTitle(f"{TITLE} — {title}")
-        dlg.setMinimumWidth(620)
+        dlg.setWindowTitle(f"{title()} — {title_fn()}")
+        dlg.setMinimumWidth(640)
         lay = QVBoxLayout(dlg)
+        top = QFormLayout()
+        lang_cb = QComboBox()
+        for code, name in LANGS:
+            lang_cb.addItem(name, code)
+        lang_cb.setCurrentIndex([c for c, _ in LANGS].index(lang()))
+        top.addRow(tr("lang"), lang_cb)
+        lay.addLayout(top)
         tabs = QTabWidget()
         lay.addWidget(tabs)
         w: dict = {}
 
-        def page(name):
+        def page(key):
             pg = QWidget()
             form = QFormLayout(pg)
-            tabs.addTab(pg, name)
+            tabs.addTab(pg, tr(key))
             return form
+
+        def note(form, key):
+            lb = QLabel(tr(key))
+            lb.setWordWrap(True)
+            form.addRow(lb)
 
         def length(form, key, label, lo=0.0, hi=200.0, dec=3, step=0.05, suffix=" m"):
             sb = QDoubleSpinBox()
@@ -749,7 +1362,7 @@ class NaveDialog:
             sb.setSingleStep(step)
             sb.setSuffix(suffix)
             sb.setValue(p0[key])
-            form.addRow(label, sb)
+            form.addRow(tr(label), sb)
             w[key] = sb
             return sb
 
@@ -760,7 +1373,15 @@ class NaveDialog:
             sb.setSuffix(" mm")
             sb.setValue(p0[key] * 1000)
             sb.setProperty("mm", True)
-            form.addRow(label, sb)
+            form.addRow(tr(label), sb)
+            w[key] = sb
+            return sb
+
+        def integer(form, key, label, lo, hi):
+            sb = QSpinBox()
+            sb.setRange(lo, hi)
+            sb.setValue(p0[key])
+            form.addRow(tr(label), sb)
             w[key] = sb
             return sb
 
@@ -768,51 +1389,66 @@ class NaveDialog:
             cb = QComboBox()
             cb.addItems([n for n in PROFILE_NAMES if n.split()[0] in series])
             cb.setCurrentText(p0[key])
-            form.addRow(label, cb)
+            form.addRow(tr(label), cb)
+            w[key] = cb
+            return cb
+
+        def coded(form, key, label, codes, prefix):
+            cb = QComboBox()
+            for c in codes:
+                cb.addItem(tr(prefix + c), c)
+            cb.setCurrentIndex(codes.index(p0[key]))
+            cb.setProperty("coded", True)
+            form.addRow(tr(label), cb)
             w[key] = cb
             return cb
 
         def check(form, key, label):
-            cb = QCheckBox(label)
+            cb = QCheckBox(tr(label))
             cb.setChecked(p0[key])
             form.addRow(cb)
             w[key] = cb
             return cb
 
-        f = page("Geometría")
-        length(f, "luz", "Luz (caras exteriores de pilares)", 2.0, 100.0)
-        length(f, "alero", "Altura de alero (cara superior del dintel)", 1.0, 50.0)
-        length(f, "pendiente", "Pendiente", 0.0, 99.0, 2, 1.0, " %")
-        sp = QSpinBox()
-        sp.setRange(1, 200)
-        sp.setValue(p0["n_porticos"])
-        f.addRow("Número de pórticos", sp)
-        w["n_porticos"] = sp
-        length(f, "separacion", "Separación entre pórticos", 0.5, 30.0)
+        def enable_with(ctrl, widgets, extra=None):
+            def sync(*_a):
+                on = ctrl.isChecked() if extra is None else extra()
+                for x in widgets:
+                    x.setEnabled(on)
+            ctrl.toggled.connect(sync)
+            sync()
+            return sync
 
-        f = page("Pilares y dinteles")
-        profile(f, "pilar", "Perfil de pilares")
-        profile(f, "dintel", "Perfil de dinteles")
-        length(f, "cart_alero_l", "Cartela de alero: longitud", 0.0, 10.0)
-        length(f, "cart_alero_h", "Cartela de alero: canto", 0.0, 3.0)
-        length(f, "cart_cumb_l", "Cartela de cumbrera: semilongitud", 0.0, 10.0)
-        length(f, "cart_cumb_h", "Cartela de cumbrera: canto", 0.0, 3.0)
-        f.addRow(QLabel("Longitud o canto 0 = sin cartela."))
+        f = page("tab_geo")
+        length(f, "luz", "f_luz", 2.0, 100.0)
+        length(f, "alero", "f_alero", 1.0, 50.0)
+        length(f, "alero_der", "f_alero_der", 1.0, 50.0)
+        note(f, "f_alero_note")
+        length(f, "pendiente", "f_pend", 0.0, 99.0, 2, 1.0, " %")
+        integer(f, "n_porticos", "f_n", 1, 200)
+        length(f, "separacion", "f_sep", 0.5, 30.0)
 
-        f = page("Correas")
-        tipo = QComboBox()
-        for code, label in PURLIN_TYPES:
-            tipo.addItem(label, code)
-        tipo.setCurrentIndex([c for c, _ in PURLIN_TYPES].index(p0["correa_tipo"]))
-        f.addRow("Tipo", tipo)
-        w["correa_tipo"] = tipo
-        conf = [mm(f, "correa_h", "Canto"), mm(f, "correa_b", "Ala"),
-                mm(f, "correa_e", "Espesor", 20.0, 2), mm(f, "correa_c", "Labio")]
-        ipe = profile(f, "correa_ipe", "Perfil IPE", ("IPE",))
-        length(f, "correa_sep", "Separación máxima", 0.3, 5.0)
-        length(f, "correa_d_alero", "Distancia al alero (sobre faldón)", 0.0, 3.0)
-        length(f, "correa_d_cumbrera", "Distancia a la cumbrera (sobre faldón)", 0.0, 3.0)
-        length(f, "correa_vuelo", "Vuelo sobre los pórticos extremos", 0.0, 3.0)
+        f = page("tab_frame")
+        profile(f, "pilar", "f_pilar")
+        profile(f, "dintel", "f_dintel")
+        dext_on = check(f, "dintel_ext_on", "f_dext_on")
+        dext = profile(f, "dintel_ext", "f_dext")
+        enable_with(dext_on, [dext])
+        length(f, "cart_alero_l", "f_ca_l", 0.0, 10.0)
+        length(f, "cart_alero_h", "f_ca_h", 0.0, 3.0)
+        length(f, "cart_cumb_l", "f_ck_l", 0.0, 10.0)
+        length(f, "cart_cumb_h", "f_ck_h", 0.0, 3.0)
+        note(f, "f_cart_note")
+
+        f = page("tab_purlin")
+        tipo = coded(f, "correa_tipo", "f_ctipo", PURLIN_TYPES, "p_")
+        conf = [mm(f, "correa_h", "f_ch"), mm(f, "correa_b", "f_cb"),
+                mm(f, "correa_e", "f_ce", 20.0, 2), mm(f, "correa_c", "f_cc")]
+        ipe = profile(f, "correa_ipe", "f_cipe", ("IPE",))
+        length(f, "correa_sep", "f_csep", 0.3, 5.0)
+        length(f, "correa_d_alero", "f_cda", 0.0, 3.0)
+        length(f, "correa_d_cumbrera", "f_cdc", 0.0, 3.0)
+        length(f, "correa_vuelo", "f_cv", 0.0, 3.0)
 
         def sync_tipo():
             is_ipe = tipo.currentData() == "IPE"
@@ -822,24 +1458,31 @@ class NaveDialog:
         tipo.currentIndexChanged.connect(lambda _i: sync_tipo())
         sync_tipo()
 
-        f = page("Canalón")
-        cn = check(f, "canalon", "Canalón exterior en U")
-        cn_w = [mm(f, "canalon_a", "Anchura"), mm(f, "canalon_h", "Altura"),
-                mm(f, "canalon_e", "Espesor de chapa", 20.0, 2)]
-        cn.toggled.connect(lambda on: [x.setEnabled(on) for x in cn_w])
-        for x in cn_w:
-            x.setEnabled(cn.isChecked())
+        f = page("tab_gutter")
+        cn = check(f, "canalon", "f_can")
+        enable_with(cn, [mm(f, "canalon_a", "f_cana"), mm(f, "canalon_h", "f_canh"),
+                         mm(f, "canalon_e", "f_cane", 20.0, 2)])
 
-        f = page("Puente grúa")
-        pg = check(f, "grua", "Ménsulas y viga carril de puente grúa")
-        pg_w = [profile(f, "mensula", "Perfil de ménsula"),
-                length(f, "mensula_z", "Cota de apoyo (cara superior de ménsula)", 0.5, 50.0),
-                length(f, "mensula_vuelo", "Vuelo (cara interior del pilar a eje de viga carril)",
-                       0.05, 3.0),
-                profile(f, "viga_carril", "Perfil de viga carril")]
-        pg.toggled.connect(lambda on: [x.setEnabled(on) for x in pg_w])
-        for x in pg_w:
-            x.setEnabled(pg.isChecked())
+        f = page("tab_crane")
+        pg = check(f, "grua", "f_grua")
+        enable_with(pg, [profile(f, "mensula", "f_mens"),
+                         length(f, "mensula_z", "f_mz", 0.5, 50.0),
+                         length(f, "mensula_vuelo", "f_mv", 0.05, 3.0),
+                         profile(f, "viga_carril", "f_vc")])
+
+        f = page("tab_brace")
+        acub = check(f, "arr_cub", "f_acub")
+        afach = check(f, "arr_fach", "f_afach")
+        common = [coded(f, "arr_vanos", "f_avanos", BRACED_BAYS, "v_"),
+                  mm(f, "arr_d", "f_ad", 60.0, 0)]
+        arec = integer(f, "arr_recuadros", "f_arec", 1, 20)
+        afn = integer(f, "arr_fach_n", "f_afn", 1, 10)
+        note(f, "f_brace_note")
+        enable_with(acub, [arec])
+        enable_with(afach, [afn])
+        both = lambda: acub.isChecked() or afach.isChecked()  # noqa: E731
+        enable_with(acub, common, both)
+        enable_with(afach, common, both)
 
         info = QLabel()
         info.setWordWrap(True)
@@ -856,7 +1499,7 @@ class NaveDialog:
                     out[k] = wd.value()
                 elif isinstance(wd, QDoubleSpinBox):
                     out[k] = wd.value() / 1000 if wd.property("mm") else wd.value()
-                elif k == "correa_tipo":
+                elif wd.property("coded"):
                     out[k] = wd.currentData()
                 else:
                     out[k] = wd.currentText()
@@ -865,10 +1508,13 @@ class NaveDialog:
         def refresh(*_a):
             try:
                 p = read()
-                msgs = Geo(p).crane_check()
+                g = Geo(p)
+                msgs = g.crane_check()
                 text = summary(p)
                 if msgs:
                     text += "<br><span style='color:#c0392b'>⚠ " + "<br>⚠ ".join(msgs) + "</span>"
+                for m in g.notes():
+                    text += f"<br><span style='color:#7f8c8d'>ℹ {m}</span>"
                 info.setText(text)
             except NaveError as exc:
                 info.setText(f"<span style='color:#c0392b'>⚠ {exc}</span>")
@@ -879,30 +1525,37 @@ class NaveDialog:
                     getattr(wd, sig).connect(refresh)
                     break
         refresh()
-        result = {}
+        state = {"status": "cancel", "params": p0}
 
         def accept():
-            from PySide6.QtWidgets import QMessageBox
             try:
                 p = read()
                 g = Geo(p)
                 g.purlin_section()
                 msgs = g.crane_check()
             except NaveError as exc:
-                QMessageBox.warning(dlg, TITLE, str(exc))
+                QMessageBox.warning(dlg, title(), str(exc))
                 return
             if msgs and QMessageBox.question(
-                    dlg, TITLE, "\n".join(msgs) + "\n\n¿Generar la nave de todos modos?"
+                    dlg, title(), "\n".join(msgs) + "\n\n" + tr("w_anyway")
             ) != QMessageBox.Yes:
                 return
-            result.update(p)
+            state.update(status="ok", params=p)
             dlg.accept()
 
+        def relang(_i):
+            code = lang_cb.currentData()
+            if code == lang():
+                return
+            state.update(status="relang", params=read())
+            set_lang(code)
+            dlg.done(2)
+
+        lang_cb.currentIndexChanged.connect(relang)
         buttons.accepted.connect(accept)
         buttons.rejected.connect(dlg.reject)
-        if dlg.exec() != QDialog.Accepted:
-            return None
-        return result
+        dlg.exec()
+        return state["status"], state["params"]
 
 
 class MeasureDialog:
@@ -918,32 +1571,31 @@ class MeasureDialog:
             _warn(viewport, str(exc))
             return
         dlg = QDialog(viewport.window())
-        dlg.setWindowTitle(f"{TITLE} — Medición de acero — {nave.name}")
+        dlg.setWindowTitle(f"{title()} — {tr('t_meas', name=nave.name)}")
         lay = QVBoxLayout(dlg)
-        heads = ["Elemento", "Perfil", "Ud.", "Long. unit. (m)", "kg/m", "Total (kg)"]
+        heads = list(tr("mh"))
         tbl = QTableWidget(len(rows) + 1, len(heads))
         tbl.setHorizontalHeaderLabels(heads)
-        fmt = lambda v, d: f"{v:,.{d}f}".replace(",", " ").replace(".", ",")  # noqa: E731
         lines = ["\t".join(heads)]
         for i, (e, prof, u, l, kgm, kg) in enumerate(rows):
-            vals = [e, prof, str(u), fmt(l, 3), fmt(kgm, 2), fmt(kg, 1)]
+            vals = [e, prof, str(u), _num(l, 3), _num(kgm, 2), _num(kg, 1)]
             lines.append("\t".join(vals))
             for j, v in enumerate(vals):
                 tbl.setItem(i, j, QTableWidgetItem(v))
         total = sum(r[5] for r in rows)
-        tbl.setItem(len(rows), 0, QTableWidgetItem("TOTAL"))
-        tbl.setItem(len(rows), 5, QTableWidgetItem(fmt(total, 1)))
-        lines.append("\t".join(["TOTAL", "", "", "", "", fmt(total, 1)]))
+        tbl.setItem(len(rows), 0, QTableWidgetItem(tr("m_total")))
+        tbl.setItem(len(rows), 5, QTableWidgetItem(_num(total, 1)))
+        lines.append("\t".join([tr("m_total"), "", "", "", "", _num(total, 1)]))
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         tbl.setEditTriggers(QTableWidget.NoEditTriggers)
         lay.addWidget(tbl)
-        lay.addWidget(QLabel("Pesos nominales de catálogo, sin uniones, placas ni rigidizadores."))
+        lay.addWidget(QLabel(tr("m_note")))
         bb = QDialogButtonBox(QDialogButtonBox.Close)
-        copy_btn = bb.addButton("Copiar (para Excel)", QDialogButtonBox.ActionRole)
+        copy_btn = bb.addButton(tr("m_copy"), QDialogButtonBox.ActionRole)
         copy_btn.clicked.connect(lambda: QApplication.clipboard().setText("\n".join(lines)))
         bb.rejected.connect(dlg.reject)
         lay.addWidget(bb)
-        dlg.resize(720, 360)
+        dlg.resize(820, 420)
         dlg.exec()
 
 
@@ -960,10 +1612,10 @@ def _fill_menu(sub, viewport_of, create=True, existing=True, later=False) -> Non
         return lambda: QTimer.singleShot(0, lambda: fn(viewport_of()))
 
     if create:
-        sub.addAction("Nueva nave…", run(nueva))
+        sub.addAction(tr("m_new"), run(nueva))
     if existing:
-        sub.addAction("Editar nave…", run(editar))
-        sub.addAction("Medición de acero…", run(medicion))
+        sub.addAction(tr("m_edit"), run(editar))
+        sub.addAction(tr("m_meas"), run(medicion))
 
 
 def outliner_kind(group):
@@ -975,16 +1627,20 @@ def outliner_kind(group):
         g = Geo(p)
         kg = sum(r[5] for r in measurement(p))
     except NaveError:
-        return {"type": "Nave", "props": []}
-    return {"type": "Nave", "props": [
-        ("Luz", f"{g.L:.2f} m"), ("Longitud", f"{g.Ln:.2f} m"),
-        ("Alero", f"{g.H:.2f} m"), ("Pórticos", f"{g.n} × {p['pilar']} / {p['dintel']}"),
-        ("Acero", f"{kg:,.0f} kg".replace(",", "."))]}
+        return {"type": tr("nave"), "props": []}
+    alero = (f"{g.Hl:.2f} m" if abs(g.Hl - g.Hr) < 1e-9 else f"{g.Hl:.2f} / {g.Hr:.2f} m")
+    port = f"{g.n} × {p['pilar']} / {p['dintel']}"
+    if p["dintel_ext_on"]:
+        port += f" ({p['dintel_ext']})"
+    return {"type": tr("nave"), "props": [
+        (tr("o_luz"), f"{g.L:.2f} m"), (tr("o_long"), f"{g.Ln:.2f} m"),
+        (tr("o_alero"), alero), (tr("o_port"), port),
+        (tr("o_acero"), f"{_num(kg)} kg")]}
 
 
 def setup(app) -> None:
     viewport_of = lambda: app.viewport  # noqa: E731
-    sub = app.add_menu(TITLE)
+    sub = app.add_menu(title())
     if sub is not None:
         _fill_menu(sub, viewport_of)
 
@@ -992,7 +1648,7 @@ def setup(app) -> None:
         if not _selected_naves(app.viewport.scene):
             return
         menu.addSeparator()
-        _fill_menu(menu.addMenu(TITLE), viewport_of, create=False, later=True)
+        _fill_menu(menu.addMenu(title()), viewport_of, create=False, later=True)
 
     app.add_context_menu(context)
     add_kind = getattr(app, "add_outliner_kind", None)

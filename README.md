@@ -8,18 +8,27 @@ metálicos a dos aguas, paramétrica y editable.
 ## Contenido del modelo
 
 - Pilares y dinteles con perfiles europeos IPE, HEA y HEB.
+- Dintel opcionalmente distinto en los pórticos extremos (primero y último).
+- Alturas de alero independientes en cada fachada: la pendiente es común y la
+  cumbrera se desplaza hacia la fachada más alta.
 - Cartelas de alero y de cumbrera (alma y ala inferior en chapa).
 - Correas C o Z conformadas, o IPE, repartidas por faldón con una separación
   máxima.
 - Canalón exterior en U.
 - Puente grúa opcional: ménsulas en los pilares y viga carril, con aviso de
   interferencia con el dintel y la cartela.
+- Cruces de San Andrés en redondo macizo, en cubierta y en fachadas
+  laterales, en los vanos extremos o en todos.
 
-Cada pórtico es un componente (todas las copias comparten una definición) y,
-dentro de él, pilares, dinteles, cartelas y ménsulas son también componentes.
-Las piezas llevan etiquetas (Estructura, Correas, Canalones, Puente grúa) y
+Cada pórtico es un componente: los interiores comparten una definición y los
+extremos otra (una sola si el dintel es el mismo). Dentro de ellos, pilares,
+dinteles, cartelas y ménsulas son también componentes. Las piezas llevan
+etiquetas (Estructura, Correas, Canalones, Puente grúa, Arriostramientos) y
 clase BIM (IfcColumn, IfcBeam, IfcMember), de modo que la exportación IFC
 sale clasificada.
+
+Interfaz en español e inglés: el idioma se elige en el cuadro de parámetros y
+se conserva para las sesiones siguientes.
 
 Los parámetros se guardan en la nave, dentro del `.igz`: **Editar nave…** la
 regenera en el mismo lugar aunque se haya movido o girado, en un solo paso de
@@ -42,7 +51,9 @@ vez publicada en el catálogo.
 
 - Luz: distancia entre caras exteriores de pilares.
 - Altura de alero: cota de la cara superior del dintel en la cara exterior del
-  pilar.
+  pilar, en cada fachada.
+- Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
+  plano paralelo al faldón, bajo la cara superior del dintel.
 - Cota de ménsula: cara superior (apoyo de la viga carril). Vuelo: de la cara
   interior del pilar al eje de la viga carril.
 - Pesos nominales de catálogo, sin uniones, placas ni rigidizadores.
