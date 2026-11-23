@@ -57,6 +57,10 @@ Añadir un parámetro exige, por lo general, modificar:
 - Unión pilar–dintel: el pilar sube `pilar_sobre` (5 cm por defecto) sobre
   la cara superior del dintel en la cara interior del pilar; el dintel arranca
   en la cara interior del pilar (corte a plomo).
+- Canalón: U apoyado sobre el dintel, de la cara interior del pilar hacia
+  dentro; su fondo descansa en el punto alto del dintel bajo él.
+- Correas: `correa_d_alero` del extremo del dintel al borde de la primera
+  correa; `correa_d_cumbrera` de la cumbrera al borde de la última.
 - Pórticos extremos (primero y último): dintel `dintel_ext` si
   `dintel_ext_on`; la cota de alero y la cabeza de pilar se mantienen.
 - Cruces de San Andrés: redondo macizo. Fachada: plano del eje de pilares,

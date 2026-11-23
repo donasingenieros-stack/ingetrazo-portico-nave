@@ -14,7 +14,7 @@ metálicos a dos aguas, paramétrica y editable.
 - Cartelas de alero y de cumbrera (alma y ala inferior en chapa).
 - Correas C o Z conformadas, o IPE, repartidas por faldón con una separación
   máxima.
-- Canalón exterior en U.
+- Canalón en U apoyado sobre el dintel, junto al ala interior del pilar.
 - Puente grúa opcional: ménsulas en los pilares y viga carril, con aviso de
   interferencia con el dintel y la cartela.
 - Cruces de San Andrés en redondo macizo, en cubierta y en fachadas
@@ -61,6 +61,9 @@ vez publicada en el catálogo.
   pilar, en cada fachada.
 - Unión pilar–dintel: el pilar sube 5 cm (ajustable) sobre la cara superior
   del dintel y el dintel arranca en la cara interior del pilar.
+- Correas: la primera, a la distancia indicada del extremo del dintel (cara
+  interior del pilar) hasta el borde de la correa; la última, a la distancia
+  indicada de la cumbrera hasta su borde.
 - Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
   plano paralelo al faldón, bajo la cara superior del dintel.
 - Cota de ménsula: cara superior (apoyo de la viga carril). Vuelo: de la cara

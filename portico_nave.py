@@ -13,7 +13,7 @@ parámetros, una nave de pórticos metálicos a dos aguas:
   misma pendiente en ambos faldones);
 * correas C o Z conformadas, o IPE, repartidas por faldón con una
   separación máxima;
-* canalón exterior en U;
+* canalón en U apoyado sobre el dintel, junto al pilar;
 * puente grúa opcional: ménsulas en los pilares y viga carril;
 * cruces de San Andrés (redondo macizo) en cubierta y en fachadas
   laterales, en los vanos extremos o en todos.
@@ -52,6 +52,9 @@ Convenios geométricos:
   la fachada más alta.
 * Unión pilar–dintel: el pilar sube por encima de la cara superior del
   dintel (5 cm por defecto) y el dintel arranca en la cara interior del pilar.
+* La primera correa se sitúa a una distancia del extremo del dintel (cara
+  interior del pilar) medida hasta el borde de la correa; la última, a una
+  distancia de la cumbrera medida también hasta su borde.
 * La cota de la ménsula es la de su cara superior (apoyo de la viga carril);
   el vuelo se mide desde la cara interior del pilar al eje de la viga carril.
 * Cruces de fachada en el plano del eje de pilares; cruces de cubierta en un
@@ -138,10 +141,10 @@ _S = {
                 "The bracket reach is less than half the runway beam width."),
     "c_ridge": ("La viga carril sobrepasa la cumbrera{where}.",
                 "The runway beam goes past the ridge{where}."),
-    "c_purlin": ("La primera correa apoya sobre la cabeza del pilar; la distancia al alero "
-                 "debe ser al menos {dmin:.0f} mm.",
-                 "The first purlin sits on the column head; the distance to the eaves "
-                 "must be at least {dmin:.0f} mm."),
+    "c_purlin": ("La primera correa (a {d:.2f} m del extremo del dintel) choca con el canalón "
+                 "de {a:.2f} m de anchura.",
+                 "The first purlin ({d:.2f} m from the rafter end) clashes with the "
+                 "{a:.2f} m wide gutter."),
     "c_info_brace": ("Con un solo pórtico no se generan cruces de San Andrés.",
                      "No cross bracing is generated with a single frame."),
     # Fachadas
@@ -254,13 +257,16 @@ _S = {
     "f_cc": ("Labio", "Lip"),
     "f_cipe": ("Perfil IPE", "IPE section"),
     "f_csep": ("Separación máxima", "Maximum spacing"),
-    "f_cda": ("Distancia al alero (sobre faldón)", "Distance to eaves (along slope)"),
-    "f_cdc": ("Distancia a la cumbrera (sobre faldón)", "Distance to ridge (along slope)"),
+    "f_cda": ("Primera correa: del extremo del dintel al borde (sobre faldón)",
+              "First purlin: rafter end to purlin edge (along slope)"),
+    "f_cdc": ("Última correa: de la cumbrera al borde (sobre faldón)",
+              "Last purlin: ridge to purlin edge (along slope)"),
     "f_cv": ("Vuelo sobre los pórticos extremos", "Overhang beyond end frames"),
     "p_C": ("C conformada", "Cold-formed C"),
     "p_Z": ("Z conformada", "Cold-formed Z"),
     "p_IPE": ("IPE laminado", "Hot-rolled IPE"),
-    "f_can": ("Canalón exterior en U", "External U gutter"),
+    "f_can": ("Canalón en U apoyado sobre el dintel, junto al pilar",
+              "U gutter resting on the rafter, next to the column"),
     "f_cana": ("Anchura", "Width"),
     "f_canh": ("Altura", "Height"),
     "f_cane": ("Espesor de chapa", "Sheet thickness"),
@@ -470,7 +476,7 @@ DEFAULTS = {
     # Correas
     "correa_tipo": "C", "correa_h": 0.200, "correa_b": 0.070,
     "correa_e": 0.0025, "correa_c": 0.020, "correa_ipe": "IPE 140",
-    "correa_sep": 1.50, "correa_d_alero": 0.40, "correa_d_cumbrera": 0.15,
+    "correa_sep": 1.50, "correa_d_alero": 0.35, "correa_d_cumbrera": 0.15,
     "correa_vuelo": 0.0,
     # Canalón
     "canalon": True, "canalon_a": 0.30, "canalon_h": 0.20, "canalon_e": 0.002,
@@ -667,10 +673,17 @@ class Geo:
         return poly, polygon_area(poly) * STEEL, h
 
     def purlin_positions(self, sd: str = "l") -> list[float]:
-        """Distancias, medidas sobre el faldón desde el alero, de cada correa."""
+        """Distancias, medidas sobre el faldón desde la cara exterior del pilar,
+        del origen de cada correa. La primera queda a «correa_d_alero» del
+        extremo del dintel (cara interior del pilar) y la última a
+        «correa_d_cumbrera» de la cumbrera, ambas medidas hasta el borde de la
+        correa: con 0, la correa queda justo en el extremo del dintel."""
         p = self.p
-        a0 = max(0.0, p["correa_d_alero"])
-        a1 = self.side(sd).Lslope - max(0.0, p["correa_d_cumbrera"])
+        poly, _kg, _h = self.purlin_section()
+        umin = min(u for u, _w in poly)
+        umax = max(u for u, _w in poly)
+        a0 = self.hp / self.ca + max(0.0, p["correa_d_alero"]) - umin
+        a1 = self.side(sd).Lslope - max(0.0, p["correa_d_cumbrera"]) - umax
         if a1 <= a0:
             return [a0]
         smax = p["correa_sep"]
@@ -682,13 +695,10 @@ class Geo:
     # --- Puente grúa ----------------------------------------------------
 
     def purlin_check(self) -> list[str]:
-        """Aviso si la primera correa apoya sobre la cabeza del pilar."""
-        poly, _kg, _h = self.purlin_section()
-        umin = min(u for u, _w in poly)
-        a0 = self.purlin_positions("l")[0]
-        if (a0 + umin) * self.ca < self.hp - 1e-6:
-            dmin = (self.hp / self.ca - umin) * 1000
-            return [tr("c_purlin", dmin=dmin)]
+        """Aviso si la primera correa choca con el canalón."""
+        p = self.p
+        if p["canalon"] and p["correa_d_alero"] < p["canalon_a"] - 1e-6:
+            return [tr("c_purlin", d=p["correa_d_alero"], a=p["canalon_a"])]
         return []
 
     def crane_check(self) -> list[str]:
@@ -1264,8 +1274,11 @@ class _Builder:
         a, h, e = p["canalon_a"], p["canalon_h"], p["canalon_e"]
         if min(a, h, e) <= 0 or 2 * e >= min(a, h):
             raise NaveError(tr("e_gutter"))
+        # Apoyado sobre el dintel, junto al ala interior del pilar: el fondo
+        # descansa en el punto alto del dintel bajo él (x = hp + a).
         m_cn = _mesh()
-        prism(m_cn, [(-a + u, -v, -h + w) for u, w in u_section(a, h, e)], (0, Lco, 0),
+        zb = (g.hp + a) * g.t
+        prism(m_cn, [(g.hp + u, -v, zb + w) for u, w in u_section(a, h, e)], (0, Lco, 0),
               _paint(self.scene, "can"))
         ly = layer_name("can")
         return [_container(tr("n_can"), [
