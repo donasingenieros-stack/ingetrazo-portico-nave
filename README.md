@@ -3,7 +3,7 @@
 Genera en [IngeTrazo](https://ingetrazo.com) una nave industrial de pórticos
 metálicos a dos aguas, paramétrica y editable.
 
-![Nave generada con los valores por defecto](captura.png)
+![Nave generada con Pórtico de nave 1.2](captura.webp)
 
 ## Contenido del modelo
 
