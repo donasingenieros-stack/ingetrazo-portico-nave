@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Pórtico de nave — extensión para IngeTrazo.
+# Acero: nave de pórticos — extensión para IngeTrazo.
 # (c) 2026 Donas Ingenieros (José María Martín García-Donas). Escrita con ayuda de IA (Claude).
-"""Pórtico de nave — nave industrial paramétrica de pórticos a dos aguas.
+"""Acero: nave de pórticos — nave industrial paramétrica de pórticos a dos aguas.
 
-Extensiones ▸ Pórtico de nave ▸ Nueva nave… genera, con un cuadro de
+Extensiones ▸ Acero: nave de pórticos ▸ Nueva nave… genera, con un cuadro de
 parámetros, una nave de pórticos metálicos a dos aguas:
 
 * pilares y dinteles IPE / HEA / HEB, con cartelas de alero y de cumbrera
@@ -75,7 +75,7 @@ from core.history import SnapshotImport
 
 log = logging.getLogger("ingetrazo.plugins.portico_nave")
 
-__version__ = "1.2"
+__version__ = "1.3"
 
 KEY = Path(__file__).stem            # = ExtensionApp.key
 STEEL = 7850.0                       # kg/m³
@@ -89,7 +89,7 @@ _LANG: str | None = None
 
 _S = {
     # Generales
-    "title": ("Pórtico de nave", "Portal-frame shed"),
+    "title": ("Acero: nave de pórticos", "Steel: portal-frame shed"),
     "nave": ("Nave", "Shed"),
     "lang": ("Idioma / Language", "Idioma / Language"),
     # Menús y órdenes
@@ -103,10 +103,10 @@ _S = {
     "ok_edit": ("«{name}» actualizada.", "“{name}” updated."),
     "w_close_group": ("Cierre el grupo que está editando y vuelva a ejecutar la orden.",
                       "Close the group you are editing and run the command again."),
-    "w_select": ("Seleccione una nave creada con Pórtico de nave.",
-                 "Select a shed created with Portal-frame shed."),
-    "w_not_nave": ("«{name}» no es una nave de Pórtico de nave.",
-                   "“{name}” is not a Portal-frame shed."),
+    "w_select": ("Seleccione una nave creada con Acero: nave de pórticos.",
+                 "Select a shed created with Steel: portal-frame shed."),
+    "w_not_nave": ("«{name}» no es una nave de Acero: nave de pórticos.",
+                   "“{name}” is not a Steel: portal-frame shed."),
     "w_anyway": ("¿Generar la nave de todos modos?", "Generate the shed anyway?"),
     # Errores
     "e_pos": ("La luz y las alturas de alero deben ser positivas.",

@@ -1,7 +1,7 @@
 # Estructura del código — `portico_nave.py`
 
 Índice de referencia para localizar y solicitar modificaciones. Los números de
-línea son orientativos (versión 1.2).
+línea son orientativos (versión 1.3).
 
 ## Índice por bloques
 

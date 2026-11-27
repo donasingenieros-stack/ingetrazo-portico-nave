@@ -1,4 +1,4 @@
-# Pórtico de nave — extensión para IngeTrazo
+# Acero: nave de pórticos — extensión para IngeTrazo
 
 Genera en [IngeTrazo](https://ingetrazo.com) una nave industrial de pórticos
 metálicos a dos aguas, paramétrica y editable.
@@ -48,7 +48,7 @@ al portapapeles para Excel.
    (Windows: `%APPDATA%\ingetrazo\plugins\`; Linux:
    `~/.local/share/ingetrazo/plugins/`).
 2. Copie `portico_nave.py` en esa carpeta y reinicie IngeTrazo.
-3. Órdenes en **Extensiones ▸ Pórtico de nave** y en el menú contextual de una
+3. Órdenes en **Extensiones ▸ Acero: nave de pórticos** y en el menú contextual de una
    nave seleccionada.
 
 También puede instalarse desde **Extensiones ▸ Gestionar extensiones…** una
